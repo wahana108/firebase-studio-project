@@ -2,7 +2,7 @@
 "use client";
 
 import type { LogFormData } from "@/types";
-import { useFormState } from "react-dom";
+import { useActionState } from "react"; // Changed from react-dom
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,7 +41,7 @@ const initialState = {
 };
 
 export function LogForm() {
-  const [state, formAction] = useFormState(createLogAction, initialState);
+  const [state, formAction] = useActionState(createLogAction, initialState); // Changed from useFormState
   const { toast } = useToast();
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
