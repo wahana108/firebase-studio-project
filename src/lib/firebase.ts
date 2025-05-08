@@ -1,26 +1,20 @@
 
-// TODO: Create a .env.local file in the root of your project and add your Firebase configuration:
-/*
-NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_auth_domain
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-*/
-// Make sure to replace "your_..." with your actual Firebase project credentials.
+// Firebase configuration is now hardcoded as per user request.
+// Environment variables are no longer used for Firebase setup.
 
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getAnalytics, type Analytics } from "firebase/analytics";
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+const firebaseConfig: FirebaseOptions = {
+  apiKey: "AIzaSyBOLpRzw11Yw6xDDCyrO8KHpw4pBw6MQVE",
+  authDomain: "the-mother-earth-project.firebaseapp.com",
+  projectId: "the-mother-earth-project",
+  storageBucket: "the-mother-earth-project.appspot.com", // Corrected format
+  messagingSenderId: "923391762712",
+  appId: "1:923391762712:web:2993b089a3f9c3dfad7e6d",
+  measurementId: "G-4EVWWXY3KX"
 };
 
 // Initialize Firebase
@@ -28,5 +22,12 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 const db = getFirestore(app);
 const storage = getStorage(app);
+let analytics: Analytics | undefined;
 
-export { app, db, storage };
+if (typeof window !== 'undefined') {
+  // Initialize Analytics only on the client side
+  analytics = getAnalytics(app);
+}
+
+export { app, db, storage, analytics };
+
