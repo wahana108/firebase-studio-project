@@ -136,7 +136,13 @@ export function LogForm() {
               <label htmlFor="image-upload" className="flex flex-col items-center justify-center w-full h-full cursor-pointer">
                 {imagePreview ? (
                   <div className="relative w-full h-40">
-                    <Image src={imagePreview} alt="Image preview" layout="fill" objectFit="contain" className="rounded-md" />
+                    <Image
+                      src={imagePreview}
+                      alt="Image preview"
+                      fill
+                      style={{ objectFit: 'contain' }}
+                      className="rounded-md"
+                    />
                   </div>
                 ) : (
                   <div className="text-center">

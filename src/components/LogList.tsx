@@ -111,8 +111,8 @@ export async function LogList() {
               <Image
                 src={log.imageUrl}
                 alt={log.title}
-                layout="fill"
-                objectFit="cover"
+                fill
+                style={{ objectFit: 'cover' }}
                 className="transition-transform duration-300 group-hover:scale-105"
                 data-ai-hint="abstract technology"
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 25vw"

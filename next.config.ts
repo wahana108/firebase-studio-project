@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
         hostname: 'firebasestorage.googleapis.com',
         port: '',
         pathname: '/**',
+      }, // <--- Tambahkan koma di sini
+      {
+        protocol: 'http', // Emulator Storage berjalan di HTTP
+        hostname: 'localhost',
+        port: '5004', // Port default Firebase Storage Emulator
+        pathname: '/v0/b/the-mother-earth-project.appspot.com/o/**', // Sesuaikan path jika perlu, tapi ini umum
       }
     ],
   },
