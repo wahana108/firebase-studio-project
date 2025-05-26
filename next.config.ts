@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export', // Baris ini sudah ada dan mengaktifkan static export
+  // output: 'export', // Nonaktifkan atau hapus baris ini untuk mengaktifkan middleware
   typescript: {
     ignoreBuildErrors: true,
   },
