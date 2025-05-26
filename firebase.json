@@ -6,7 +6,7 @@
     },
     "storage": {
       "port": 5004,
-      "rules": "storage.rules"
+      "rules": "firebase/storage.rules"
     },
     "hosting": {
       "port": 5001
@@ -20,9 +20,20 @@
     "rules": "firestore.rules"
   },
   "storage": {
-    "rules": "storage.rules"
+    "rules": "firebase/storage.rules"
   },
   "hosting": {
-    "public": "out"
+    "public": "out",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   }
 }

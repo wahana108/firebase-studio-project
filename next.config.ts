@@ -1,8 +1,7 @@
-
-import type {NextConfig} from 'next';
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'export', // Baris ini sudah ada dan mengaktifkan static export
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -22,15 +21,15 @@ const nextConfig: NextConfig = {
         hostname: 'firebasestorage.googleapis.com',
         port: '',
         pathname: '/**',
-      }, // <--- Tambahkan koma di sini
+      },
       {
-        protocol: 'http', // Emulator Storage berjalan di HTTP
+        protocol: 'http',
         hostname: 'localhost',
-        port: '5004', // Port default Firebase Storage Emulator
-        pathname: '/v0/b/the-mother-earth-project.appspot.com/o/**', // Sesuaikan path jika perlu, tapi ini umum
+        port: '5004',
+        pathname: '/v0/b/mindmapper-lite.appspot.com/o/**',
       }
     ],
   },
 };
 
-export default nextConfig;
+export default nextConfig; // Ini adalah cara yang benar untuk mengekspor konfigurasi di file .ts

@@ -8,6 +8,7 @@ import { Toaster } from '@/components/ui/toaster';
 export const metadata: Metadata = {
   title: 'MindMapper Lite',
   description: 'A simple mind mapping log application.',
+  robots: 'noindex, nofollow', // Mencegah indeksasi oleh mesin pencari
 };
 
 export default function RootLayout({

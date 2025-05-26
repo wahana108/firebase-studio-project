@@ -1,5 +1,4 @@
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
 
@@ -16,7 +15,6 @@ const firebaseConfig = {
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
@@ -27,4 +25,4 @@ if (process.env.NODE_ENV === "development") {
 }
 
 // Eksport instance untuk digunakan di tempat lain
-export { app, analytics, db, storage };
+export { app, db, storage };
