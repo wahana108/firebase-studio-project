@@ -11,7 +11,7 @@ const firebaseConfig: FirebaseOptions = {
   apiKey: "AIzaSyBOLpRzw11Yw6xDDCyrO8KHpw4pBw6MQVE",
   authDomain: "the-mother-earth-project.firebaseapp.com",
   projectId: "the-mother-earth-project",
-  storageBucket: "the-mother-earth-project.appspot.com", // Corrected format
+  storageBucket: "the-mother-earth-project.firebasestorage.app", // Corrected format
   messagingSenderId: "923391762712",
   appId: "1:923391762712:web:2993b089a3f9c3dfad7e6d",
   measurementId: "G-4EVWWXY3KX"
