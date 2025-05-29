@@ -48,6 +48,9 @@ ui-debug.log
 
 .env.local
 .env
+.env.local.template
 
 # Turbopack
 /.turbo/
+
+the-mother-earth-project-firebase-adminsdk-fbsvc-49fa84d8df.json
