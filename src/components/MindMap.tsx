@@ -5,11 +5,11 @@ import { ReactFlow, Background, Controls, MiniMap, Node, Edge, Handle, Position 
 import "@xyflow/react/dist/style.css";
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebase"; // Pastikan path ini benar
 import type { Log } from "@/types";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Link as LinkIcon, ArrowLeft } from "lucide-react";
+import { Link as LinkIcon, ArrowLeft, Home } from "lucide-react";
 
 interface CustomNodeData {
   label: string;
@@ -45,8 +45,10 @@ const nodeTypesDefinition = {
             alt={data.label || "Node image"}
             style={{ width: "100%", height: "100%", objectFit: "contain" }}
             onError={(e) => {
-              e.currentTarget.src = "/placeholder-image.png"; // Fallback image
+              // Handle image error, e.g., by setting a placeholder
+              // e.currentTarget.src = "/placeholder-image.png"; // Pastikan placeholder ada
             }}
+            data-ai-hint="node image"
           />
         </div>
       )}
@@ -67,6 +69,11 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
   // Ambil data terbaru dari Firestore
   useEffect(() => {
     async function fetchLatestLogData() {
+      if (!logId) {
+        console.warn("[MindMap] logId is undefined, skipping fetch.");
+        setLogData(null);
+        return;
+      }
       try {
         console.log("[MindMap] Fetching latest log data for ID:", logId);
         const logRef = doc(db, "logs", logId);
@@ -79,7 +86,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
             id: logSnap.id,
             title: data.title || "Untitled",
             description: data.description || "",
-            imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls.filter((img) => img.url) : [],
+            imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls.filter((img: any) => img.url) : [],
             relatedLogs,
             relatedLogTitles,
             createdAt: data.createdAt || new Date().toISOString(),
@@ -94,7 +101,9 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         setLogData(null);
       }
     }
-    fetchLatestLogData();
+    if (logId) { // Hanya fetch jika logId ada
+        fetchLatestLogData();
+    }
   }, [logId]);
 
   // Update nodes dan edges berdasarkan logData
@@ -122,10 +131,11 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        border: "2px solid #3b82f6",
+        border: "2px solid hsl(var(--primary))", // Menggunakan variabel tema
         borderRadius: "8px",
         padding: "15px",
-        background: "#eff6ff",
+        background: "hsl(var(--card))", // Menggunakan variabel tema
+        color: "hsl(var(--card-foreground))" // Menggunakan variabel tema
       },
     };
 
@@ -147,10 +157,11 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          border: "1px solid #e5e7eb",
+          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
           borderRadius: "4px",
           padding: "10px",
-          background: "#f9fafb",
+          background: "hsl(var(--muted))", // Menggunakan variabel tema
+          color: "hsl(var(--muted-foreground))" // Menggunakan variabel tema
         },
       });
       newEdges.push({
@@ -158,7 +169,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         source: mainNode.id,
         target: subNodeId,
         animated: true,
-        style: { stroke: "#6b7280" },
+        style: { stroke: "hsl(var(--foreground))" }, // Menggunakan variabel tema
       });
     });
 
@@ -176,10 +187,11 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          border: "1px solid #e5e7eb",
+          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
           borderRadius: "4px",
           padding: "10px",
-          background: "#f9fafb",
+          background: "hsl(var(--muted))", // Menggunakan variabel tema
+          color: "hsl(var(--muted-foreground))" // Menggunakan variabel tema
         },
       });
       newEdges.push({
@@ -187,7 +199,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         source: mainNode.id,
         target: relatedNodeId,
         animated: true,
-        style: { stroke: "#6b7280" },
+        style: { stroke: "hsl(var(--foreground))" }, // Menggunakan variabel tema
       });
     });
 
@@ -195,21 +207,36 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     setEdges(newEdges);
   }, [logData]);
 
-  if (!logData) {
+  if (!logData && !initialLogData) { // Menunggu data awal jika belum ada
     return (
+      <div className="text-center p-8 text-muted-foreground">
+        Memuat data log...
+      </div>
+    );
+  }
+
+  if (!logData && initialLogData) { // Jika data awal ada tapi fetch gagal (mis. logId tidak valid)
+     return (
       <div className="text-center p-8 text-muted-foreground">
         Data log tidak dapat dimuat atau tidak ditemukan.
       </div>
     );
   }
 
+
   return (
     <div className="w-full max-w-5xl mx-auto p-4 md:p-0">
-      <div className="mb-4">
+      <div className="mb-4 flex space-x-2">
         <Button variant="outline" asChild>
           <Link href={`/logs/${logId}`}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Kembali ke Log
+          </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/">
+            <Home className="mr-2 h-4 w-4" />
+            Kembali ke Utama
           </Link>
         </Button>
       </div>
@@ -218,10 +245,10 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         style={{
           width: "100%",
           height: "600px",
-          border: "1px solid #e5e7eb",
+          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
           borderRadius: "8px",
           marginBottom: "24px",
-          background: "#fdfdff",
+          background: "hsl(var(--background))", // Menggunakan variabel tema
         }}
       >
         <ReactFlow
@@ -236,7 +263,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
         </ReactFlow>
       </div>
-      {logData.relatedLogs && logData.relatedLogs.length > 0 && (
+      {logData && logData.relatedLogs && logData.relatedLogs.length > 0 && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <p className="text-lg font-semibold flex items-center mb-3">
             <LinkIcon className="h-5 w-5 mr-2 text-primary" />

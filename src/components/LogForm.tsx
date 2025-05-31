@@ -1,3 +1,4 @@
+
 // src/components/LogForm.tsx
 "use client";
 
@@ -59,13 +60,18 @@ interface ExistingImage {
   caption?: string;
 }
 
+interface LogFormComponentProps {
+  initialData?: LogFormData & { imageUrls?: ExistingImage[]; relatedLogs?: string[] };
+  onLogCreated?: () => void;
+  variant?: 'card' | 'embedded'; // New prop
+  action?: (prevState: any, formData: FormData) => Promise<any>; // if using server actions
+}
+
 function LogFormComponent({
   initialData,
   onLogCreated,
-}: {
-  initialData?: LogFormData & { imageUrls?: ExistingImage[]; relatedLogs?: string[] };
-  onLogCreated?: () => void;
-}) {
+  variant = 'card', // Default to 'card'
+}: LogFormComponentProps) {
   const [isPending, setIsPending] = useState(false);
   const { toast } = useToast();
   const [mainImagePreview, setMainImagePreview] = useState<string | null>(null);
@@ -102,19 +108,26 @@ function LogFormComponent({
       try {
         console.log("[LogForm] Fetching logs from Firestore");
         const logsCollection = collection(db, "logs");
-        const logsQuery = query(logsCollection);
+        const logsQuery = query(logsCollection); // Removed orderBy for now, will sort client-side
         const querySnapshot = await getDocs(logsQuery);
         const logs = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           title: doc.data().title as string,
         }));
-        setAllLogs(logs.filter((log) => log.id !== initialData?.id));
+        // Sort logs alphabetically by title
+        const sortedLogs = logs.sort((a, b) => a.title.localeCompare(b.title));
+        setAllLogs(sortedLogs.filter((log) => log.id !== initialData?.id));
       } catch (error) {
         console.error("[LogForm] Error fetching logs:", error);
+        toast({
+          title: "Error",
+          description: "Could not fetch logs for relations.",
+          variant: "destructive",
+        });
       }
     }
     fetchLogs();
-  }, [initialData?.id]);
+  }, [initialData?.id, toast]);
 
   useEffect(() => {
     if (initialData?.imageUrls) {
@@ -145,6 +158,11 @@ function LogFormComponent({
         URL.revokeObjectURL(mainImagePreview);
       }
       setMainImagePreview(null);
+      supportingItemPreviews.forEach((preview) => {
+        if (preview && preview.startsWith("blob:")) {
+          URL.revokeObjectURL(preview);
+        }
+      });
       setSupportingItemPreviews(Array(MAX_SUPPORTING_ITEMS).fill(null));
       setExistingImages([]);
     }
@@ -164,6 +182,7 @@ function LogFormComponent({
         }),
       relatedLogIds: initialData?.relatedLogs || [],
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData]);
 
   const handleMainImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,7 +320,6 @@ function LogFormComponent({
     try {
       const imageUrls: ExistingImage[] = [];
 
-      // Unggah gambar utama
       let mainImageUrl: string | null = null;
       if (data.mainImage instanceof File) {
         console.log("[LogForm] Uploading main image:", data.mainImage.name);
@@ -309,41 +327,66 @@ function LogFormComponent({
         await uploadBytes(mainImageRef, data.mainImage);
         mainImageUrl = await getDownloadURL(mainImageRef);
         imageUrls.push({ url: mainImageUrl, isMain: true, caption: data.mainCaption });
-      } else if (existingImages.some((img) => img.isMain)) {
-        const existingMainImage = existingImages.find((img) => img.isMain);
+      } else if (existingImages.some((img) => img.isMain && mainImagePreview === img.url)) { 
+        const existingMainImage = existingImages.find((img) => img.isMain && mainImagePreview === img.url);
         if (existingMainImage) {
-          imageUrls.push(existingMainImage);
+          imageUrls.push({...existingMainImage, caption: data.mainCaption});
         }
+      } else if (!data.mainImage && data.mainCaption){
+         imageUrls.push({ url: null, isMain: true, caption: data.mainCaption });
       }
 
-      // Unggah gambar pendukung
       for (let i = 0; i < data.supportingItems.length; i++) {
         const item = data.supportingItems[i];
+        const previewUrl = supportingItemPreviews[i];
         if (item.image instanceof File) {
           console.log("[LogForm] Uploading supporting image", i, ":", item.image.name);
           const supportingImageRef = ref(storage, `logs/${Date.now()}_${item.image.name}`);
           await uploadBytes(supportingImageRef, item.image);
           const supportingImageUrl = await getDownloadURL(supportingImageRef);
           imageUrls.push({ url: supportingImageUrl, isMain: false, caption: item.caption });
-        } else if (supportingItemPreviews[i] && existingImages.some((img) => img.url === supportingItemPreviews[i])) {
-          const existingSupportingImage = existingImages.find((img) => img.url === supportingItemPreviews[i]);
+        } else if (previewUrl && existingImages.some((img) => img.url === previewUrl && !img.isMain)) {
+          const existingSupportingImage = existingImages.find((img) => img.url === previewUrl && !img.isMain);
           if (existingSupportingImage) {
             imageUrls.push({ ...existingSupportingImage, caption: item.caption });
           }
+        } else if (!item.image && item.caption){ 
+           imageUrls.push({ url: null, isMain: false, caption: item.caption });
         }
       }
+      
+      let mainImageFound = false;
+      const processedImageUrls = imageUrls.map(img => {
+          if (img.isMain) {
+              if (!mainImageFound && img.url) {
+                  mainImageFound = true;
+                  return img;
+              } else if (mainImageFound && img.url) { 
+                  return { ...img, isMain: false };
+              }
+          }
+          return img;
+      });
 
-      // Siapkan data untuk Firestore
+      if (!mainImageFound && processedImageUrls.some(img => img.url)) {
+          const firstValidImageIndex = processedImageUrls.findIndex(img => img.url);
+          if (firstValidImageIndex !== -1) {
+              processedImageUrls[firstValidImageIndex].isMain = true;
+              mainImageFound = true;
+          }
+      }
+
       const logData = {
         title: data.title,
         description: data.description,
-        imageUrls: imageUrls.filter((img) => img.url),
+        imageUrls: processedImageUrls.filter((img) => img.url || img.caption),
         relatedLogs: data.relatedLogIds || [],
         relatedLogTitles: (data.relatedLogIds || []).map(
           (id) => allLogs.find((log) => log.id === id)?.title || `Log ${id.substring(0, 6)}...`
         ),
         updatedAt: new Date().toISOString(),
-        createdAt: initialData?.createdAt || new Date().toISOString(),
+        ...(initialData?.id ? {} : { createdAt: new Date().toISOString() }), 
+        ...(initialData?.createdAt && initialData?.id ? { createdAt: initialData.createdAt } : {}),
       };
 
       console.log("[LogForm] Saving log data to Firestore:", logData);
@@ -356,7 +399,7 @@ function LogFormComponent({
         toast({ title: "Success!", description: "Log updated successfully." });
       } else {
         const logsCollection = collection(db, "logs");
-        const docRef = await addDoc(logsCollection, logData);
+        const docRef = await addDoc(logsCollection, { ...logData, createdAt: new Date().toISOString() });
         logId = docRef.id;
         toast({ title: "Success!", description: "Log created successfully." });
       }
@@ -373,6 +416,9 @@ function LogFormComponent({
         URL.revokeObjectURL(mainImagePreview);
       }
       setMainImagePreview(null);
+      supportingItemPreviews.forEach(preview => {
+        if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
+      });
       setSupportingItemPreviews(Array(MAX_SUPPORTING_ITEMS).fill(null));
       setExistingImages([]);
       if (formRef.current) formRef.current.reset();
@@ -394,6 +440,189 @@ function LogFormComponent({
     }
   };
 
+  const formContent = (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="title">Title</Label>
+        <Input id="title" placeholder="Enter topic title" {...form.register("title")} className={form.formState.errors.title ? "border-destructive" : ""} />
+        {form.formState.errors.title && (<p className="text-sm text-destructive">{form.formState.errors.title.message}</p>)}
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea id="description" placeholder="Describe your topic" rows={4} {...form.register("description")} className={form.formState.errors.description ? "border-destructive" : ""} />
+        {form.formState.errors.description && (<p className="text-sm text-destructive">{form.formState.errors.description.message}</p>)}
+      </div>
+
+      <div className="space-y-4">
+        <Label>Main Idea (optional)</Label>
+        <div className="p-4 border rounded-md space-y-2 flex flex-col items-center">
+          <div className="flex items-center justify-between w-full">
+            <Label htmlFor="main-image">Main Image</Label>
+            {mainImagePreview && (
+              <Button type="button" variant="destructive" size="icon" className="h-6 w-6" onClick={removeMainImage}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          <Input
+            id="main-image"
+            type="file"
+            accept="image/*"
+            className="w-full max-w-xs"
+            onChange={handleMainImageChange}
+          />
+          {mainImagePreview && (
+            <div className="relative h-32 w-32 mt-2">
+              <img
+                src={mainImagePreview}
+                alt="Main Image Preview"
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                className="rounded-md border"
+              />
+            </div>
+          )}
+          {form.formState.errors.mainImage && (<p className="text-sm text-destructive">{form.formState.errors.mainImage.message}</p>)}
+
+          <div className="w-full space-y-2">
+            <Label htmlFor="main-caption">Main Caption</Label>
+            <Input
+              id="main-caption"
+              placeholder="Enter main caption (max 200 characters)"
+              {...form.register("mainCaption")}
+              className={form.formState.errors.mainCaption ? "border-destructive" : ""}
+            />
+            {form.formState.errors.mainCaption && (<p className="text-sm text-destructive">{form.formState.errors.mainCaption.message}</p>)}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Label>Supporting Items (up to {MAX_SUPPORTING_ITEMS}, optional images/captions)</Label>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-1/3">Image</TableHead>
+              <TableHead>Caption</TableHead>
+              <TableHead className="w-12 text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: MAX_SUPPORTING_ITEMS }).map((_, index) => (
+              <TableRow key={`supporting-item-${index}`}>
+                <TableCell>
+                  <Input
+                    id={`supporting-image-${index}`}
+                    type="file"
+                    accept="image/*"
+                    className="w-full"
+                    onChange={(e) => handleSupportingItemChange(index, "image", e.target.files?.[0] || null)}
+                  />
+                  {supportingItemPreviews[index] && (
+                    <div className="relative h-16 w-16 mt-2">
+                      <img
+                        src={supportingItemPreviews[index]!}
+                        alt={`Supporting Item ${index + 1} Preview`}
+                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                        className="rounded-md border"
+                      />
+                    </div>
+                  )}
+                  {form.formState.errors.supportingItems?.[index]?.image && (
+                    <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.image?.message as string}</p>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Input
+                    id={`supporting-caption-${index}`}
+                    placeholder="Enter caption"
+                    {...form.register(`supportingItems.${index}.caption`)}
+                    className={form.formState.errors.supportingItems?.[index]?.caption ? "border-destructive" : ""}
+                  />
+                  {form.formState.errors.supportingItems?.[index]?.caption && (
+                    <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.caption?.message}</p>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  {(supportingItemPreviews[index] || form.getValues(`supportingItems.${index}.image`)) && (
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeSupportingImage(index)}>
+                      <X className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {form.formState.errors.supportingItems && typeof form.formState.errors.supportingItems.message === "string" && (
+          <p className="text-sm text-destructive mt-1">{form.formState.errors.supportingItems.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label>Related Logs</Label>
+        <div className="border rounded-md p-4 max-h-40 overflow-y-auto bg-muted/50">
+          {allLogs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No other logs available to relate.</p>
+          ) : (
+            allLogs.map((log) => (
+              <div key={log.id} className="flex items-center space-x-2 py-1 hover:bg-muted/80 rounded px-2 transition-colors">
+                <Checkbox
+                  id={`related-log-${log.id}`}
+                  checked={(watchedRelatedLogIds || []).includes(log.id)}
+                  onCheckedChange={() => toggleLogSelection(log.id)}
+                />
+                <Label htmlFor={`related-log-${log.id}`} className="text-sm font-normal flex-1 cursor-pointer py-1">
+                  {log.title}
+                </Label>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {(watchedRelatedLogIds || []).map((id) => {
+            const relatedLog = allLogs.find((log) => log.id === id);
+            return (
+              <div key={id} className="flex items-center bg-primary/10 text-primary-foreground px-2 py-1 rounded-md text-xs">
+                {relatedLog?.title || `Log ID: ${id.substring(0, 6)}...`}
+                <button
+                  type="button"
+                  onClick={() => toggleLogSelection(id)}
+                  className="ml-2 text-destructive hover:text-destructive-foreground"
+                  aria-label={`Remove related log: ${relatedLog?.title || id}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {form.formState.errors.relatedLogIds && (
+          <p className="text-sm text-destructive">{form.formState.errors.relatedLogIds.message}</p>
+        )}
+      </div>
+    </>
+  );
+
+  if (variant === 'embedded') {
+    return (
+      <form ref={formRef} onSubmit={form.handleSubmit(onClientSubmit)} className="space-y-6">
+        <div className="space-y-4">
+         {formContent}
+        </div>
+        <div className="mt-6"> {/* Mimicking CardFooter's spacing somewhat */}
+          <Button type="submit" className="w-full" disabled={isPending || form.formState.isSubmitting}>
+            <Send className="mr-2 h-4 w-4" />
+            {isPending || form.formState.isSubmitting
+              ? (initialData ? "Updating Log..." : "Adding Log...")
+              : (initialData ? "Update Log" : "Add Log")
+            }
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  // Default 'card' variant
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-lg">
       <CardHeader>
@@ -402,164 +631,7 @@ function LogFormComponent({
       </CardHeader>
       <form ref={formRef} onSubmit={form.handleSubmit(onClientSubmit)} className="space-y-6">
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input id="title" placeholder="Enter topic title" {...form.register("title")} className={form.formState.errors.title ? "border-destructive" : ""} />
-            {form.formState.errors.title && (<p className="text-sm text-destructive">{form.formState.errors.title.message}</p>)}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea id="description" placeholder="Describe your topic" rows={4} {...form.register("description")} className={form.formState.errors.description ? "border-destructive" : ""} />
-            {form.formState.errors.description && (<p className="text-sm text-destructive">{form.formState.errors.description.message}</p>)}
-          </div>
-
-          <div className="space-y-4">
-            <Label>Main Idea (optional)</Label>
-            <div className="p-4 border rounded-md space-y-2 flex flex-col items-center">
-              <div className="flex items-center justify-between w-full">
-                <Label htmlFor="main-image">Main Image</Label>
-                {mainImagePreview && (
-                  <Button type="button" variant="destructive" size="icon" className="h-6 w-6" onClick={removeMainImage}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              <Input
-                id="main-image"
-                type="file"
-                accept="image/*"
-                className="w-full max-w-xs"
-                onChange={handleMainImageChange}
-              />
-              {mainImagePreview && (
-                <div className="relative h-32 w-32 mt-2">
-                  <img
-                    src={mainImagePreview}
-                    alt="Main Image Preview"
-                    style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                    className="rounded-md border"
-                  />
-                </div>
-              )}
-              {form.formState.errors.mainImage && (<p className="text-sm text-destructive">{form.formState.errors.mainImage.message}</p>)}
-
-              <div className="w-full space-y-2">
-                <Label htmlFor="main-caption">Main Caption</Label>
-                <Input
-                  id="main-caption"
-                  placeholder="Enter main caption (max 200 characters)"
-                  {...form.register("mainCaption")}
-                  className={form.formState.errors.mainCaption ? "border-destructive" : ""}
-                />
-                {form.formState.errors.mainCaption && (<p className="text-sm text-destructive">{form.formState.errors.mainCaption.message}</p>)}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <Label>Supporting Items (up to {MAX_SUPPORTING_ITEMS}, optional images/captions)</Label>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-1/3">Image</TableHead>
-                  <TableHead>Caption</TableHead>
-                  <TableHead className="w-12 text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.from({ length: MAX_SUPPORTING_ITEMS }).map((_, index) => (
-                  <TableRow key={`supporting-item-${index}`}>
-                    <TableCell>
-                      <Input
-                        id={`supporting-image-${index}`}
-                        type="file"
-                        accept="image/*"
-                        className="w-full"
-                        onChange={(e) => handleSupportingItemChange(index, "image", e.target.files?.[0] || null)}
-                      />
-                      {supportingItemPreviews[index] && (
-                        <div className="relative h-16 w-16 mt-2">
-                          <img
-                            src={supportingItemPreviews[index]!}
-                            alt={`Supporting Item ${index + 1} Preview`}
-                            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                            className="rounded-md border"
-                          />
-                        </div>
-                      )}
-                      {form.formState.errors.supportingItems?.[index]?.image && (
-                        <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.image?.message}</p>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        id={`supporting-caption-${index}`}
-                        placeholder="Enter caption"
-                        {...form.register(`supportingItems.${index}.caption`)}
-                        className={form.formState.errors.supportingItems?.[index]?.caption ? "border-destructive" : ""}
-                      />
-                      {form.formState.errors.supportingItems?.[index]?.caption && (
-                        <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.caption?.message}</p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {(supportingItemPreviews[index] || form.getValues(`supportingItems.${index}.image`)) && (
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeSupportingImage(index)}>
-                          <X className="h-4 w-4 text-destructive" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {form.formState.errors.supportingItems && typeof form.formState.errors.supportingItems.message === "string" && (
-              <p className="text-sm text-destructive mt-1">{form.formState.errors.supportingItems.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>Related Logs</Label>
-            <div className="border rounded-md p-4 max-h-40 overflow-y-auto bg-muted/50">
-              {allLogs.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No other logs available to relate.</p>
-              ) : (
-                allLogs.map((log) => (
-                  <div key={log.id} className="flex items-center space-x-2 py-1 hover:bg-muted/80 rounded px-2 transition-colors">
-                    <Checkbox
-                      id={`related-log-${log.id}`}
-                      checked={(watchedRelatedLogIds || []).includes(log.id)}
-                      onCheckedChange={() => toggleLogSelection(log.id)}
-                    />
-                    <Label htmlFor={`related-log-${log.id}`} className="text-sm font-normal flex-1 cursor-pointer py-1">
-                      {log.title}
-                    </Label>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {(watchedRelatedLogIds || []).map((id) => {
-                const relatedLog = allLogs.find((log) => log.id === id);
-                return (
-                  <div key={id} className="flex items-center bg-primary/10 text-primary-foreground px-2 py-1 rounded-md text-xs">
-                    {relatedLog?.title || `Log ID: ${id.substring(0, 6)}...`}
-                    <button
-                      type="button"
-                      onClick={() => toggleLogSelection(id)}
-                      className="ml-2 text-destructive hover:text-destructive-foreground"
-                      aria-label={`Remove related log: ${relatedLog?.title || id}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            {form.formState.errors.relatedLogIds && (
-              <p className="text-sm text-destructive">{form.formState.errors.relatedLogIds.message}</p>
-            )}
-          </div>
+          {formContent}
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={isPending || form.formState.isSubmitting}>

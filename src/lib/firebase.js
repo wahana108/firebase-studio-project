@@ -1,28 +1,33 @@
 import { initializeApp } from "firebase/app";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
 
-// Ambil kredensial dari variabel lingkungan
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyBOLpRzw11Yw6xDDCyrO8KHpw4pBw6MQVE",
+  authDomain: "the-mother-earth-project.firebaseapp.com",
+  projectId: "the-mother-earth-project",
+  storageBucket: "the-mother-earth-project.firebasestorage.app",
+  messagingSenderId: "923391762712",
+  appId: "1:923391762712:web:2993b089a3f9c3dfad7e6d",
+  measurementId: "G-4EVWWXY3KX"
 };
 
-// Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Hubungkan ke emulator lokal saat pengembangan
 if (process.env.NODE_ENV === "development") {
-  connectFirestoreEmulator(db, "localhost", 5000);
-  connectStorageEmulator(storage, "localhost", 5004);
+  console.log('[Firebase] Connecting to emulators...');
+  try {
+    connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
+    connectFirestoreEmulator(db, "localhost", 5000);
+    connectStorageEmulator(storage, "localhost", 5004);
+    console.log('[Firebase] Connected to emulators.');
+  } catch (err) {
+    console.error('[Firebase] Emulator connection error:', err);
+  }
 }
 
-// Eksport instance untuk digunakan di tempat lain
-export { app, db, storage };
+export { app, auth, db, storage };
