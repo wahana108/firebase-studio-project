@@ -1,3 +1,4 @@
+
 "use client";
 
 import { LogForm } from "@/components/LogForm";
@@ -7,14 +8,26 @@ import { Separator } from "@/components/ui/separator";
 import { Sparkles } from "lucide-react";
 import { createLogAction } from "@/lib/actions";
 import { useState, useCallback } from "react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export default function ClientHomePage() {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [accordionValue, setAccordionValue] = useState<string | undefined>(undefined);
 
   const handleLogCreated = useCallback(() => {
     setRefreshKey((prev) => prev + 1);
     console.log("[ClientHomePage] Refresh triggered for LogList");
   }, []);
+
+  const handleLogCreatedAndCollapse = useCallback(() => {
+    handleLogCreated();
+    setAccordionValue(undefined); // Collapse the accordion
+  }, [handleLogCreated]);
 
   return (
     <div className="min-h-screen flex flex-col items-center p-4 md:p-8 selection:bg-primary/20">
@@ -35,8 +48,37 @@ export default function ClientHomePage() {
           <SearchBar />
         </section>
 
-        <section aria-labelledby="create-log-heading">
-          <LogForm action={createLogAction} onLogCreated={handleLogCreated} />
+        <section aria-labelledby="create-log-heading" className="w-full">
+          <Accordion 
+            type="single" 
+            collapsible 
+            className="w-full"
+            value={accordionValue}
+            onValueChange={setAccordionValue}
+          >
+            <AccordionItem value="create-log-item" className="border bg-card text-card-foreground rounded-lg shadow-sm">
+              <AccordionTrigger className="hover:no-underline px-6 py-4 text-left w-full data-[state=open]:border-b">
+                <div className="flex justify-between items-start w-full">
+                    <div>
+                        <h2 id="create-log-heading" className="text-2xl font-bold">Create New Log</h2>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Click to expand and add a new mind map entry.
+                        </p>
+                    </div>
+                    {/* Default chevron is part of AccordionTrigger */}
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-0">
+                <div className="p-6 pt-0">
+                  <LogForm 
+                    action={createLogAction} 
+                    onLogCreated={handleLogCreatedAndCollapse}
+                    variant="embedded"
+                  />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </section>
 
         <Separator className="my-12" />
