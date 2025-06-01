@@ -51,6 +51,7 @@ const formSchema = z.object({
     })
   ).length(MAX_SUPPORTING_ITEMS, `Exactly ${MAX_SUPPORTING_ITEMS} supporting items required.`),
   relatedLogIds: z.array(z.string()).optional(),
+  isPublic: z.boolean().optional().default(false),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -61,16 +62,16 @@ interface ExistingImage {
 }
 
 interface LogFormComponentProps {
-  initialData?: LogFormData & { imageUrls?: ExistingImage[]; relatedLogs?: string[] };
+  initialData?: LogFormData & { imageUrls?: ExistingImage[]; relatedLogs?: string[]; isPublic?: boolean };
   onLogCreated?: () => void;
-  variant?: 'card' | 'embedded'; // New prop
-  action?: (prevState: any, formData: FormData) => Promise<any>; // if using server actions
+  variant?: 'card' | 'embedded';
+  action?: (prevState: any, formData: FormData) => Promise<any>;
 }
 
 function LogFormComponent({
   initialData,
   onLogCreated,
-  variant = 'card', // Default to 'card'
+  variant = 'card',
 }: LogFormComponentProps) {
   const [isPending, setIsPending] = useState(false);
   const { toast } = useToast();
@@ -98,6 +99,7 @@ function LogFormComponent({
           };
         }),
       relatedLogIds: initialData?.relatedLogs || [],
+      isPublic: initialData?.isPublic || false,
     },
   });
 
@@ -108,13 +110,12 @@ function LogFormComponent({
       try {
         console.log("[LogForm] Fetching logs from Firestore");
         const logsCollection = collection(db, "logs");
-        const logsQuery = query(logsCollection); // Removed orderBy for now, will sort client-side
+        const logsQuery = query(logsCollection);
         const querySnapshot = await getDocs(logsQuery);
         const logs = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           title: doc.data().title as string,
         }));
-        // Sort logs alphabetically by title
         const sortedLogs = logs.sort((a, b) => a.title.localeCompare(b.title));
         setAllLogs(sortedLogs.filter((log) => log.id !== initialData?.id));
       } catch (error) {
@@ -181,6 +182,7 @@ function LogFormComponent({
           };
         }),
       relatedLogIds: initialData?.relatedLogs || [],
+      isPublic: initialData?.isPublic || false,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData]);
@@ -327,7 +329,7 @@ function LogFormComponent({
         await uploadBytes(mainImageRef, data.mainImage);
         mainImageUrl = await getDownloadURL(mainImageRef);
         imageUrls.push({ url: mainImageUrl, isMain: true, caption: data.mainCaption });
-      } else if (existingImages.some((img) => img.isMain && mainImagePreview === img.url)) { 
+      } else if (existingImages.some((img) => img.isMain && mainImagePreview === img.url)) {
         const existingMainImage = existingImages.find((img) => img.isMain && mainImagePreview === img.url);
         if (existingMainImage) {
           imageUrls.push({...existingMainImage, caption: data.mainCaption});
@@ -350,18 +352,18 @@ function LogFormComponent({
           if (existingSupportingImage) {
             imageUrls.push({ ...existingSupportingImage, caption: item.caption });
           }
-        } else if (!item.image && item.caption){ 
+        } else if (!item.image && item.caption){
            imageUrls.push({ url: null, isMain: false, caption: item.caption });
         }
       }
-      
+
       let mainImageFound = false;
       const processedImageUrls = imageUrls.map(img => {
           if (img.isMain) {
               if (!mainImageFound && img.url) {
                   mainImageFound = true;
                   return img;
-              } else if (mainImageFound && img.url) { 
+              } else if (mainImageFound && img.url) {
                   return { ...img, isMain: false };
               }
           }
@@ -384,8 +386,9 @@ function LogFormComponent({
         relatedLogTitles: (data.relatedLogIds || []).map(
           (id) => allLogs.find((log) => log.id === id)?.title || `Log ${id.substring(0, 6)}...`
         ),
+        isPublic: data.isPublic || false, // Save isPublic status
         updatedAt: new Date().toISOString(),
-        ...(initialData?.id ? {} : { createdAt: new Date().toISOString() }), 
+        ...(initialData?.id ? {} : { createdAt: new Date().toISOString() }),
         ...(initialData?.createdAt && initialData?.id ? { createdAt: initialData.createdAt } : {}),
       };
 
@@ -397,11 +400,13 @@ function LogFormComponent({
         await updateDoc(logRef, logData);
         logId = initialData.id;
         toast({ title: "Success!", description: "Log updated successfully." });
+        console.log("[LogForm] Log updated. ID:", logId);
       } else {
         const logsCollection = collection(db, "logs");
         const docRef = await addDoc(logsCollection, { ...logData, createdAt: new Date().toISOString() });
         logId = docRef.id;
         toast({ title: "Success!", description: "Log created successfully." });
+        console.log("[LogForm] Log created. ID:", logId);
       }
 
       form.reset({
@@ -411,6 +416,7 @@ function LogFormComponent({
         mainCaption: "",
         supportingItems: Array(MAX_SUPPORTING_ITEMS).fill({ image: null, caption: "" }),
         relatedLogIds: [],
+        isPublic: false,
       });
       if (mainImagePreview && mainImagePreview.startsWith("blob:")) {
         URL.revokeObjectURL(mainImagePreview);
@@ -600,6 +606,21 @@ function LogFormComponent({
           <p className="text-sm text-destructive">{form.formState.errors.relatedLogIds.message}</p>
         )}
       </div>
+
+      <div className="flex items-center space-x-2 pt-2">
+        <Checkbox
+          id="isPublic"
+          {...form.register("isPublic")}
+          defaultChecked={initialData?.isPublic || false}
+          onCheckedChange={(checked) => form.setValue("isPublic", Boolean(checked))}
+        />
+        <Label htmlFor="isPublic" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+          Make this log public (visible to everyone)
+        </Label>
+      </div>
+      {form.formState.errors.isPublic && (
+        <p className="text-sm text-destructive">{form.formState.errors.isPublic.message}</p>
+      )}
     </>
   );
 
@@ -609,7 +630,7 @@ function LogFormComponent({
         <div className="space-y-4">
          {formContent}
         </div>
-        <div className="mt-6"> {/* Mimicking CardFooter's spacing somewhat */}
+        <div className="mt-6">
           <Button type="submit" className="w-full" disabled={isPending || form.formState.isSubmitting}>
             <Send className="mr-2 h-4 w-4" />
             {isPending || form.formState.isSubmitting
@@ -622,7 +643,6 @@ function LogFormComponent({
     );
   }
 
-  // Default 'card' variant
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-lg">
       <CardHeader>

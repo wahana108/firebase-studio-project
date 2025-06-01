@@ -1,6 +1,7 @@
+
 // c:\Users\ramaw\firebase-studio-project\src\lib\firestoreUtils.ts
 import { collection, getDocs, query, orderBy, doc, getDoc, Timestamp } from "firebase/firestore";
-import { db } from "./firebase";
+import { db } from "./firebase"; // Ensure db is exported from ./firebase
 import type { Log } from "@/types";
 
 // Helper function to process a single log document
@@ -15,6 +16,8 @@ async function processLogDoc(logDocSnapshot: any): Promise<Log> {
           const relatedLogDocRef = doc(db, "logs", relatedId);
           const relatedLogDocSnap = await getDoc(relatedLogDocRef);
           if (relatedLogDocSnap.exists()) {
+            // If the current context is not public, we can show any related log title.
+            // If this utility is used for a public page, it might need to check if relatedLog is also public.
             relatedLogTitles.push(relatedLogDocSnap.data().title || "Log Tanpa Judul");
           } else {
             relatedLogTitles.push("Log Tidak Ditemukan");
@@ -41,6 +44,7 @@ async function processLogDoc(logDocSnapshot: any): Promise<Log> {
     imageUrls: logData.imageUrls || [],
     relatedLogs: logData.relatedLogs || [],
     relatedLogTitles: relatedLogTitles,
+    isPublic: logData.isPublic || false, // Include isPublic
     createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : new Date().toISOString()),
     updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : (typeof updatedAt === 'string' ? updatedAt : new Date().toISOString()),
   } as Log;
@@ -50,6 +54,9 @@ async function processLogDoc(logDocSnapshot: any): Promise<Log> {
 export async function getLogs(): Promise<Log[] | { error: string; type: "firebase_setup" | "generic" }> {
   try {
     const logsCollection = collection(db, "logs");
+    // This fetches ALL logs. If the main page is behind Basic Auth, this is fine.
+    // If not, this should also filter by isPublic or by ownerId for authenticated users.
+    // For now, keeping it as is, assuming the page calling this is already auth-protected.
     const logsQuery = query(logsCollection, orderBy("createdAt", "desc"));
     const querySnapshot = await getDocs(logsQuery);
 
@@ -68,22 +75,21 @@ export async function getLogs(): Promise<Log[] | { error: string; type: "firebas
 
 export async function searchLogs(searchTerm: string): Promise<Log[] | { error: string; type: "firebase_setup" | "generic" }> {
   if (!searchTerm.trim()) {
-    return getLogs(); // Jika search term kosong, kembalikan semua log
+    return getLogs(); 
   }
   try {
     const logsCollection = collection(db, "logs");
-    // Untuk pencarian sederhana, kita tetap mengambil semua dan filter di client-side.
-    // Untuk aplikasi skala besar, pertimbangkan solusi search server-side (mis. Algolia, Typesense).
     const logsQuery = query(logsCollection, orderBy("createdAt", "desc"));
     const querySnapshot = await getDocs(logsQuery);
 
     const lowerSearchTerm = searchTerm.toLowerCase();
     const allLogsProcessed = await Promise.all(querySnapshot.docs.map(logDoc => processLogDoc(logDoc)));
-
+    
+    // Assuming searchLogs is used on a page protected by Basic Auth, so it can search all logs.
+    // If this were for a public search, it should only search public logs.
     const matchedLogs: Log[] = [];
-    const addedLogIds = new Set<string>(); // Untuk menghindari duplikasi
+    const addedLogIds = new Set<string>(); 
 
-    // Pass 1: Cari log yang cocok dengan judul atau deskripsi
     for (const log of allLogsProcessed) {
       const titleMatch = log.title?.toLowerCase().includes(lowerSearchTerm);
       const descriptionMatch = log.description?.toLowerCase().includes(lowerSearchTerm);
@@ -96,17 +102,11 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
       }
     }
     
-    // Pass 2: Cari log yang terkait dengan log hasil pencarian (dari Pass 1)
-    // atau yang judul log terkaitnya cocok dengan search term
     const directMatchIds = new Set<string>(matchedLogs.map(log => log.id));
 
     for (const log of allLogsProcessed) {
-        // Jika log ini belum ditambahkan
         if (!addedLogIds.has(log.id)) {
-            // Cek apakah log ini terkait dengan salah satu log yang sudah cocok secara langsung
             const isRelatedToDirectMatch = log.relatedLogs?.some(relatedId => directMatchIds.has(relatedId));
-            
-            // Cek apakah salah satu judul log terkaitnya cocok dengan search term
             const relatedTitleMatchesSearch = log.relatedLogTitles?.some(title => title.toLowerCase().includes(lowerSearchTerm));
 
             if (isRelatedToDirectMatch || relatedTitleMatchesSearch) {
@@ -115,15 +115,6 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
             }
         }
     }
-    
-    // Pastikan urutan tetap berdasarkan createdAt desc jika memungkinkan,
-    // atau urutkan ulang jika urutan menjadi acak setelah pass kedua.
-    // Karena kita memproses allLogsProcessed yang sudah diurutkan,
-    // dan menambahkan ke matchedLogs, urutannya mungkin tidak sepenuhnya terjaga.
-    // Jika urutan sangat penting, Anda bisa mengurutkan ulang `matchedLogs` di sini.
-    // Contoh: matchedLogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-
     return matchedLogs;
 
   } catch (error: any) {
@@ -134,3 +125,5 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
     return { error: error.message || "Terjadi kesalahan saat mencari log.", type: "generic" };
   }
 }
+// Export db if it's not already available elsewhere for PublicLogListClient
+export { db };
