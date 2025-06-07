@@ -87,6 +87,7 @@ export const config = {
     // - /_next/static/.* (file statis Next.js)
     // - /_next/image/.* (optimasi gambar Next.js)
     // - /favicon.ico (file favicon)
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    // Tambahkan 'public' ke dalam daftar pengecualian
+    '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
   ],
 };
