@@ -1,3 +1,4 @@
+
 // src/components/MindMap.tsx
 "use client";
 
@@ -9,7 +10,7 @@ import { db } from "@/lib/firebase"; // Pastikan path ini benar
 import type { Log } from "@/types";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Link as LinkIcon, ArrowLeft, Home } from "lucide-react";
+import { Link as LinkIcon, ArrowLeft, Home, Globe } from "lucide-react";
 
 interface CustomNodeData {
   label: string;
@@ -64,14 +65,14 @@ const nodeTypesDefinition = {
 export default function MindMap({ logId, logData: initialLogData }: { logId: string; logData: Log | null }) {
   const [nodes, setNodes] = useState<Node<CustomNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const [logData, setLogData] = useState<Log | null>(initialLogData);
+  const [currentLogData, setCurrentLogData] = useState<Log | null>(initialLogData);
 
   // Ambil data terbaru dari Firestore
   useEffect(() => {
     async function fetchLatestLogData() {
       if (!logId) {
         console.warn("[MindMap] logId is undefined, skipping fetch.");
-        setLogData(null);
+        setCurrentLogData(null);
         return;
       }
       try {
@@ -82,48 +83,52 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
           const data = logSnap.data();
           const relatedLogs = Array.isArray(data.relatedLogs) ? data.relatedLogs : [];
           const relatedLogTitles = Array.isArray(data.relatedLogTitles) ? data.relatedLogTitles : [];
-          setLogData({
+          setCurrentLogData({
             id: logSnap.id,
             title: data.title || "Untitled",
             description: data.description || "",
             imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls.filter((img: any) => img.url) : [],
             relatedLogs,
             relatedLogTitles,
+            isPublic: data.isPublic || false,
             createdAt: data.createdAt || new Date().toISOString(),
             updatedAt: data.updatedAt || new Date().toISOString(),
           });
         } else {
           console.warn("[MindMap] Log not found for ID:", logId);
-          setLogData(null);
+          setCurrentLogData(null);
         }
       } catch (error) {
         console.error("[MindMap] Error fetching latest log data:", error);
-        setLogData(null);
+        setCurrentLogData(null);
       }
     }
-    if (logId) { // Hanya fetch jika logId ada
+    if (logId) { 
         fetchLatestLogData();
     }
   }, [logId]);
 
-  // Update nodes dan edges berdasarkan logData
+  // Update nodes dan edges berdasarkan currentLogData
   useEffect(() => {
-    if (!logData) {
+    if (!currentLogData) {
       setNodes([]);
       setEdges([]);
       return;
     }
 
-    console.log("[MindMap] Updating nodes and edges with logData:", logData);
+    console.log("[MindMap] Updating nodes and edges with currentLogData:", currentLogData);
 
-    const imageUrls = (logData.imageUrls || []).filter((img) => img.url && typeof img.url === "string");
+    const imageUrls = (currentLogData.imageUrls || []).filter((img) => img.url && typeof img.url === "string");
     const mainImageObj = imageUrls.find((img) => img.isMain) || (imageUrls.length > 0 ? imageUrls[0] : null);
+
+    const mainNodeX = 500; // Posisi X tengah untuk node utama
+    const mainNodeY = 400; // Posisi Y tengah untuk node utama
 
     const mainNode: Node<CustomNodeData> = {
       id: "main-node",
       type: "custom",
-      data: { label: logData.title, image: mainImageObj?.url },
-      position: { x: 250, y: 50 },
+      data: { label: currentLogData.title, image: mainImageObj?.url },
+      position: { x: mainNodeX, y: mainNodeY }, // Posisi node utama di tengah
       style: {
         width: 180,
         minHeight: 120,
@@ -131,37 +136,84 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        border: "2px solid hsl(var(--primary))", // Menggunakan variabel tema
+        border: "2px solid hsl(var(--primary))",
         borderRadius: "8px",
         padding: "15px",
-        background: "hsl(var(--card))", // Menggunakan variabel tema
-        color: "hsl(var(--card-foreground))" // Menggunakan variabel tema
+        background: "hsl(var(--card))",
+        color: "hsl(var(--card-foreground))"
       },
     };
 
     const newNodes: Node<CustomNodeData>[] = [mainNode];
     const newEdges: Edge[] = [];
 
+    // Pengaturan untuk node gambar pendukung
     const supportingImages = imageUrls.filter((img) => img.url !== mainImageObj?.url);
+    const subNodeWidth = 130;
+    const subNodeHeight = 100; // Perkiraan tinggi node pendukung
+    // Jarak dari pusat node utama ke pusat node pendukung
+    const imgSpacingX = subNodeWidth + 90; 
+    const imgSpacingY = subNodeHeight + 90;
+    // Offset horizontal untuk tiga item dalam satu baris (kiri/kanan dari item tengah)
+    const imgHorizontalOffsetForThree = subNodeWidth + 30; 
+
     supportingImages.forEach((img, idx) => {
       const subNodeId = `sub-img-node-${idx}`;
+      let position: { x: number; y: number };
+
+      // Tata letak: 1 kiri, 1 kanan, 3 atas, 3 bawah (untuk hingga 8 item)
+      // Urutan pengisian: kiri, kanan, atas-tengah, bawah-tengah, atas-kiri, atas-kanan, bawah-kiri, bawah-kanan
+      switch (idx) {
+        case 0: // Kiri
+          position = { x: mainNodeX - imgSpacingX, y: mainNodeY };
+          break;
+        case 1: // Kanan
+          position = { x: mainNodeX + imgSpacingX, y: mainNodeY };
+          break;
+        case 2: // Atas-Tengah
+          position = { x: mainNodeX, y: mainNodeY - imgSpacingY };
+          break;
+        case 3: // Bawah-Tengah
+          position = { x: mainNodeX, y: mainNodeY + imgSpacingY };
+          break;
+        case 4: // Atas-Kiri
+          position = { x: mainNodeX - imgHorizontalOffsetForThree, y: mainNodeY - imgSpacingY };
+          break;
+        case 5: // Atas-Kanan
+          position = { x: mainNodeX + imgHorizontalOffsetForThree, y: mainNodeY - imgSpacingY };
+          break;
+        case 6: // Bawah-Kiri
+          position = { x: mainNodeX - imgHorizontalOffsetForThree, y: mainNodeY + imgSpacingY };
+          break;
+        case 7: // Bawah-Kanan
+          position = { x: mainNodeX + imgHorizontalOffsetForThree, y: mainNodeY + imgSpacingY };
+          break;
+        default: // Fallback untuk lebih dari 8 gambar pendukung
+          const fallbackIndex = idx - 8;
+          position = { 
+            x: mainNodeX - imgHorizontalOffsetForThree + (fallbackIndex * (subNodeWidth + 15)),
+            y: mainNodeY + imgSpacingY + subNodeHeight + 50 // Baris tambahan di bawah
+          }; 
+          break;
+      }
+
       newNodes.push({
         id: subNodeId,
         type: "custom",
         data: { label: img.caption || `Item Gambar ${idx + 1}`, image: img.url },
-        position: { x: 50 + idx * 200, y: 300 },
+        position, // Gunakan posisi yang telah dihitung
         style: {
-          width: 130,
-          minHeight: 100,
+          width: subNodeWidth,
+          minHeight: subNodeHeight,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
+          border: "1px solid hsl(var(--border))",
           borderRadius: "4px",
           padding: "10px",
-          background: "hsl(var(--muted))", // Menggunakan variabel tema
-          color: "hsl(var(--muted-foreground))" // Menggunakan variabel tema
+          background: "hsl(var(--muted))",
+          color: "hsl(var(--muted-foreground))"
         },
       });
       newEdges.push({
@@ -169,45 +221,66 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         source: mainNode.id,
         target: subNodeId,
         animated: true,
-        style: { stroke: "hsl(var(--foreground))" }, // Menggunakan variabel tema
+        style: { stroke: "hsl(var(--foreground))" },
       });
     });
 
-    (logData.relatedLogs || []).forEach((relatedId, idx) => {
-      const relatedNodeId = `related-node-${idx}`;
-      newNodes.push({
-        id: relatedNodeId,
-        type: "custom",
-        data: { label: logData.relatedLogTitles?.[idx] || `Related Log ${idx + 1}` },
-        position: { x: 50 + idx * 200, y: 450 },
-        style: {
-          width: 130,
-          minHeight: 60,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
-          borderRadius: "4px",
-          padding: "10px",
-          background: "hsl(var(--muted))", // Menggunakan variabel tema
-          color: "hsl(var(--muted-foreground))" // Menggunakan variabel tema
-        },
-      });
-      newEdges.push({
-        id: `edge-main-${relatedNodeId}`,
-        source: mainNode.id,
-        target: relatedNodeId,
-        animated: true,
-        style: { stroke: "hsl(var(--foreground))" }, // Menggunakan variabel tema
-      });
-    });
+    // Pengaturan untuk node log terkait
+    const relatedLogsArray = currentLogData.relatedLogs || [];
+    const relatedLogTitlesArray = currentLogData.relatedLogTitles || [];
+
+    if (relatedLogsArray.length > 0) {
+        const relatedNodeW = 130;
+        const relatedNodeH = 60; // Perkiraan tinggi node log terkait
+        const gapBetweenRelated = 30; // Jarak horizontal antar node log terkait
+        
+        // Posisi Y: di bawah node gambar pendukung terbawah + jarak
+        // Node pendukung terbawah berpusat di mainNodeY + imgSpacingY
+        // Tepi bawah node pendukung terbawah: (mainNodeY + imgSpacingY) + (subNodeHeight / 2)
+        const yPositionForRelatedLogsTop = (mainNodeY + imgSpacingY) + (subNodeHeight / 2) + 40; // 40 adalah jarak vertikal
+
+        const numRelatedLogs = relatedLogsArray.length;
+        const totalWidthOfRelatedBlock = numRelatedLogs * relatedNodeW + Math.max(0, numRelatedLogs - 1) * gapBetweenRelated;
+        const startXForRelatedBlock = mainNodeX - totalWidthOfRelatedBlock / 2;
+
+        relatedLogsArray.forEach((relatedId, idx) => {
+            const relatedNodeId = `related-node-${idx}`;
+            const nodeX = startXForRelatedBlock + idx * (relatedNodeW + gapBetweenRelated);
+            
+            newNodes.push({
+                id: relatedNodeId,
+                type: "custom",
+                data: { label: relatedLogTitlesArray[idx] || `Related Log ${idx + 1}` },
+                position: { x: nodeX, y: yPositionForRelatedLogsTop },
+                style: { // Gaya dari kode asli untuk log terkait
+                    width: relatedNodeW,
+                    minHeight: relatedNodeH,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "4px",
+                    padding: "10px",
+                    background: "hsl(var(--muted))",
+                    color: "hsl(var(--muted-foreground))"
+                },
+            });
+            newEdges.push({
+                id: `edge-main-${relatedNodeId}`,
+                source: mainNode.id,
+                target: relatedNodeId,
+                animated: true,
+                style: { stroke: "hsl(var(--foreground))" },
+            });
+        });
+    }
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [logData]);
+  }, [currentLogData]);
 
-  if (!logData && !initialLogData) { // Menunggu data awal jika belum ada
+  if (!currentLogData && !initialLogData) {
     return (
       <div className="text-center p-8 text-muted-foreground">
         Memuat data log...
@@ -215,40 +288,58 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     );
   }
 
-  if (!logData && initialLogData) { // Jika data awal ada tapi fetch gagal (mis. logId tidak valid)
+  if (!currentLogData && initialLogData === null) { 
      return (
       <div className="text-center p-8 text-muted-foreground">
         Data log tidak dapat dimuat atau tidak ditemukan.
       </div>
     );
   }
-
-
+  
   return (
     <div className="w-full max-w-5xl mx-auto p-4 md:p-0">
-      <div className="mb-4 flex space-x-2">
-        <Button variant="outline" asChild>
-          <Link href={`/logs/${logId}`}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Kembali ke Log
-          </Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href="/">
-            <Home className="mr-2 h-4 w-4" />
-            Kembali ke Utama
-          </Link>
-        </Button>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {currentLogData?.isPublic ? (
+          <>
+            <Button variant="outline" asChild>
+              <Link href="/public">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Kembali ke Log Publik
+              </Link>
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" asChild>
+              <Link href={`/logs/${logId}`}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Kembali ke Detail Log
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/">
+                <Home className="mr-2 h-4 w-4" />
+                Kembali ke Utama
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/public">
+                <Globe className="mr-2 h-4 w-4" />
+                Lihat Halaman Publik
+              </Link>
+            </Button>
+          </>
+        )}
       </div>
 
       <div
         style={{
           width: "100%",
           height: "600px",
-          border: "1px solid hsl(var(--border))", // Menggunakan variabel tema
+          border: "1px solid hsl(var(--border))",
           borderRadius: "8px",
           marginBottom: "24px",
-          background: "hsl(var(--background))", // Menggunakan variabel tema
+          background: "hsl(var(--background))",
         }}
       >
         <ReactFlow
@@ -263,14 +354,14 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
         </ReactFlow>
       </div>
-      {logData && logData.relatedLogs && logData.relatedLogs.length > 0 && (
+      {currentLogData && currentLogData.relatedLogs && currentLogData.relatedLogs.length > 0 && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <p className="text-lg font-semibold flex items-center mb-3">
             <LinkIcon className="h-5 w-5 mr-2 text-primary" />
             Log Terkait:
           </p>
           <div className="flex flex-wrap gap-3">
-            {logData.relatedLogs.map((id, idx) => (
+            {currentLogData.relatedLogs.map((id, idx) => (
               <Button
                 key={id}
                 variant="outline"
@@ -279,7 +370,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
                 className="text-primary hover:bg-primary/10"
               >
                 <Link href={`/logs/${id}`}>
-                  {logData.relatedLogTitles?.[idx] || `Log ${id.substring(0, 6)}...`}
+                  {currentLogData.relatedLogTitles?.[idx] || `Log ${id.substring(0, 6)}...`}
                 </Link>
               </Button>
             ))}
@@ -289,3 +380,4 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     </div>
   );
 }
+    

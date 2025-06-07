@@ -1,10 +1,8 @@
 // src/app/(logs)/logs/[id]/edit/page.tsx
-// export const revalidate = 0; // Coba komentari atau hapus baris ini
-
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, Timestamp } from "firebase/firestore"; // Import Timestamp
 import { LogForm } from "@/components/LogForm";
-import { LogFormData } from "@/types";
+import type { LogFormData } from "@/types";
 
 export async function generateStaticParams() {
   try {
@@ -22,37 +20,42 @@ export async function generateStaticParams() {
 }
 
 export default async function EditLogPage({ params }: { params: { id: string } }) {
-  let logData: LogFormData & {
+  let logDataForForm: LogFormData & {
     imageUrls?: { url: string | null; isMain?: boolean; caption?: string }[];
     relatedLogs?: string[];
+    createdAt?: string; // Ensure this is string
+    updatedAt?: string; // Ensure this is string
   } | null = null;
 
+  const { id: logIdFromParams } = await params; // Tunggu (await) params dan ambil id
+
   try {
-    const logRef = doc(db, "logs", params.id);
+    const logRef = doc(db, "logs", logIdFromParams);
     const logSnap = await getDoc(logRef);
 
     if (!logSnap.exists()) {
       return <div className="container mx-auto p-4 text-center text-destructive">Log not found</div>;
     }
     const data = logSnap.data();
-    logData = {
+    logDataForForm = {
       id: logSnap.id,
       title: data.title || "",
       description: data.description || "",
       imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
       relatedLogs: Array.isArray(data.relatedLogs) ? data.relatedLogs : [],
-      createdAt: data.createdAt || new Date().toISOString(),
-      updatedAt: data.updatedAt || new Date().toISOString(),
+      isPublic: data.isPublic || false,
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
+      updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString()),
     };
   } catch (error) {
-    console.error(`[EditLogPage] Error fetching log data for ID ${params.id}:`, error);
+    console.error(`[EditLogPage] Error fetching log data for ID ${logIdFromParams}:`, error);
     return <div className="container mx-auto p-4 text-center text-destructive">Error loading log data. Please try again.</div>;
   }
 
   return (
     <div className="container mx-auto p-4 md:p-8">
       <h1 className="text-3xl font-bold mb-6 text-center md:text-left">Edit Log</h1>
-      {logData && <LogForm initialData={{ id: params.id, ...logData }} />}
+      {logDataForForm && <LogForm initialData={logDataForForm as LogFormData} />}
     </div>
   );
 }

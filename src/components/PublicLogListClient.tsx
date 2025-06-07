@@ -10,7 +10,7 @@ import { AlertCircle, Map, Image as ImageIcon, Link as LinkIcon, Search as Searc
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firestoreUtils"; // Assuming db is exported from firestoreUtils or directly from firebase
 import { Timestamp } from "firebase/firestore"; // Import Timestamp
 
@@ -21,7 +21,7 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
     const logsQuery = query(
       logsCollection,
       where("isPublic", "==", true),
-      orderBy("updatedAt", "desc") // Or orderBy("createdAt", "desc")
+      orderBy("updatedAt", "asc") // Disesuaikan dengan permintaan indeks (ASC)
     );
     const querySnapshot = await getDocs(logsQuery);
 
@@ -34,17 +34,13 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
         for (const relatedId of data.relatedLogs) {
           if (typeof relatedId === 'string' && relatedId.trim() !== "") {
             try {
-              // For public logs, only link to other public logs or show a generic title
               const relatedLogRef = doc(db, "logs", relatedId);
               const relatedLogSnap = await getDoc(relatedLogRef);
               if (relatedLogSnap.exists() && relatedLogSnap.data()?.isPublic) {
                 relatedLogTitles.push(relatedLogSnap.data().title || "Untitled Related Log");
-              } else {
-                 // relatedLogTitles.push("Private Related Log"); // Or omit
               }
             } catch (e) {
               console.error(`Error fetching related log title for ID ${relatedId}:`, e);
-              // relatedLogTitles.push("Error fetching title"); // Or omit
             }
           }
         }
@@ -59,9 +55,9 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
         description: data.description || "",
         imageUrls: data.imageUrls || [],
         relatedLogs: (data.relatedLogs || []).filter((id: string) => 
-            logs.find(l => l.id === id && l.isPublic) // Ensure related logs shown are also public if linking
+            logs.find(l => l.id === id && l.isPublic)
         ),
-        relatedLogTitles, // These titles are already filtered or generic
+        relatedLogTitles,
         isPublic: data.isPublic,
         createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : new Date().toISOString()),
         updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : (typeof updatedAt === 'string' ? updatedAt : new Date().toISOString()),
@@ -71,8 +67,12 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
     return logs;
   } catch (error: any) {
     console.error("[PublicLogListClient] Error fetching public logs:", error);
-    if (error.code && (error.code === 'unavailable' || error.code === 'failed-precondition' || error.code === 'unimplemented')) {
-      return { error: "Firebase (Firestore) is unavailable. Ensure emulators are running or connection is valid.", type: "firebase_setup" };
+    if (error.code && (error.code === 'unavailable' || error.code === 'failed-precondition' || error.code === 'unimplemented' || error.message.includes("query requires an index"))) {
+      const firestoreIndexLink = "https://console.firebase.google.com/v1/r/project/the-mother-earth-project/firestore/indexes?create_composite=ClVwcm9qZWN0cy90aGUtbW90aGVyLWVhcnRoLXByb2plY3QvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2xvZ3MvaW5kZXhlcy9fEAEaDAoIaXNQdWJsaWMQARoNCgl1cGRhdGVkQXQQAhoMCghfX25hbWVfXxAC"; // Default ke ASC untuk updatedAt
+      return { 
+        error: `${error.message}. Anda mungkin perlu membuat indeks komposit di Firestore. Coba link ini: ${firestoreIndexLink} (Pastikan field 'updatedAt' diurutkan 'Ascending' jika query Anda menggunakan 'orderBy("updatedAt", "asc")')`, 
+        type: "firebase_setup" 
+      };
     }
     return { error: error.message || "An error occurred while fetching public logs.", type: "generic" };
   }
@@ -111,7 +111,7 @@ export default function PublicLogListClient() {
         <strong>Error:</strong> {logsResult.error}
         {logsResult.type === "firebase_setup" && (
           <p className="text-sm mt-2">
-            Please ensure your Firebase project is correctly configured and emulators (if used) are running.
+            Please ensure your Firebase project is correctly configured, emulators (if used) are running, and necessary Firestore indexes are created.
           </p>
         )}
       </div>
@@ -129,15 +129,17 @@ export default function PublicLogListClient() {
 
   return (
     <div className="space-y-8">
-      <div className="flex gap-2 items-center mb-8">
-        <SearchIcon className="h-5 w-5 text-muted-foreground" />
-        <Input
-          type="text"
-          placeholder="Search public logs by title or description..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-sm"
-        />
+      <div className="mb-8 flex flex-col sm:flex-row gap-2 items-center justify-center">
+        <div className="relative w-full max-w-sm">
+            <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search public logs..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 w-full"
+            />
+        </div>
       </div>
 
       {allPublicLogs.length === 0 && !searchQuery && (
@@ -150,23 +152,24 @@ export default function PublicLogListClient() {
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Daftar log ditampilkan di sini, dalam satu kolom terpusat */}
+      <div className="space-y-6 w-full max-w-4xl mx-auto">
         {filteredLogs.map((log) => {
           const validImageUrls = log.imageUrls?.filter((img) => typeof img.url === "string" && img.url.trim() !== "") || [];
           return (
             <Card key={log.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col">
               <CardHeader>
-                <CardTitle className="text-xl font-semibold">{log.title}</CardTitle>
+                <CardTitle className="text-2xl font-semibold">{log.title}</CardTitle>
                 <CardDescription>
                   Published:{" "}
                   {log.createdAt ? new Date(log.createdAt as string).toLocaleDateString() : "N/A"}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">
-                <p className="text-muted-foreground mb-4 whitespace-pre-wrap line-clamp-3">{log.description}</p>
+                <p className="text-muted-foreground mb-4 whitespace-pre-wrap">{log.description}</p>
                 {validImageUrls.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2 mb-4">
-                    {validImageUrls.slice(0, 4).map((img, idx) => ( // Show up to 4 images
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
+                    {validImageUrls.map((img, idx) => ( 
                       <Dialog key={`${log.id}-img-${idx}`}>
                         <DialogTrigger asChild>
                           <div className="relative aspect-square cursor-pointer group border rounded-md overflow-hidden">
@@ -244,15 +247,4 @@ export default function PublicLogListClient() {
   );
 }
 
-// Need to get db instance from firebase directly, or ensure firestoreUtils exports it
-// For simplicity, if firestoreUtils doesn't export db:
-import { doc, getDoc } from "firebase/firestore";
-// import { db as firestoreDB } from "@/lib/firebase"; // if db is exported from main firebase.js
-// If getPublicLogs is inside this file, it will use the db imported here.
-// Let's assume db from firestoreUtils is the correct one.
-// If lib/firestoreUtils.ts doesn't export db, this will be an issue.
-// For now, I'm assuming db is accessible.
-// A common pattern is: import { db } from "@/lib/firebase";
-// And firestoreUtils also imports it from there. Let's fix the import in getPublicLogs.
-// Changing import in getPublicLogs to: import { db } from "@/lib/firebase";
-
+    
