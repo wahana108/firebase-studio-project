@@ -3,12 +3,12 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, Timestamp } from "firebase/firestore"; // Import Timestamp
 import MindMap from "@/components/MindMap";
 import type { Log } from "@/types";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore"; // Ditambahkan query, where
 
 export async function generateStaticParams() {
   try {
-    const logsCollection = collection(db, "logs");
-    const querySnapshot = await getDocs(logsCollection);
+    const logsQuery = query(collection(db, "logs"), where("isPublic", "==", true)); // Hanya log publik
+    const querySnapshot = await getDocs(logsQuery);
     const logIds = querySnapshot.docs.map((doc) => ({
       id: doc.id,
     }));
@@ -21,7 +21,7 @@ export async function generateStaticParams() {
 }
 
 export default async function MindMapPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+  const { id } = await params; // Tunggu (await) params sebelum mengambil id
   try {
     const logRef = doc(db, "logs", id);
     const logSnap = await getDoc(logRef);

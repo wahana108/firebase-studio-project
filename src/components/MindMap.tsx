@@ -1,11 +1,10 @@
-
 // src/components/MindMap.tsx
 "use client";
 
 import { ReactFlow, Background, Controls, MiniMap, Node, Edge, Handle, Position } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, Timestamp } from "firebase/firestore"; // Import Timestamp
 import { db } from "@/lib/firebase"; // Pastikan path ini benar
 import type { Log } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -80,19 +79,36 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         const logRef = doc(db, "logs", logId);
         const logSnap = await getDoc(logRef);
         if (logSnap.exists()) {
-          const data = logSnap.data();
-          const relatedLogs = Array.isArray(data.relatedLogs) ? data.relatedLogs : [];
-          const relatedLogTitles = Array.isArray(data.relatedLogTitles) ? data.relatedLogTitles : [];
+          const rawData = logSnap.data();
+
+          // Filter related logs untuk memastikan hanya yang publik yang disertakan
+          const publicRelatedLogs: string[] = [];
+          const publicRelatedLogTitles: string[] = [];
+          if (Array.isArray(rawData.relatedLogs)) {
+            for (const relatedId of rawData.relatedLogs) {
+              if (typeof relatedId === 'string' && relatedId.trim() !== "") {
+                const relatedDocRef = doc(db, "logs", relatedId);
+                const relatedDocSnap = await getDoc(relatedDocRef);
+                if (relatedDocSnap.exists() && relatedDocSnap.data()?.isPublic) {
+                  publicRelatedLogs.push(relatedId);
+                  publicRelatedLogTitles.push(relatedDocSnap.data()?.title || "Untitled Related Log");
+                }
+              }
+            }
+          }
+
           setCurrentLogData({
             id: logSnap.id,
-            title: data.title || "Untitled",
-            description: data.description || "",
-            imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls.filter((img: any) => img.url) : [],
-            relatedLogs,
-            relatedLogTitles,
-            isPublic: data.isPublic || false,
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || new Date().toISOString(),
+            title: rawData.title || "Untitled",
+            description: rawData.description || "",
+            imageUrls: Array.isArray(rawData.imageUrls) 
+              ? rawData.imageUrls.filter((img: any) => img && typeof img.url === 'string' && img.url.trim() !== '') 
+              : [],
+            relatedLogs: publicRelatedLogs,
+            relatedLogTitles: publicRelatedLogTitles,
+            isPublic: rawData.isPublic || false,
+            createdAt: rawData.createdAt instanceof Timestamp ? rawData.createdAt.toDate().toISOString() : (typeof rawData.createdAt === 'string' ? rawData.createdAt : new Date().toISOString()),
+            updatedAt: rawData.updatedAt instanceof Timestamp ? rawData.updatedAt.toDate().toISOString() : (typeof rawData.updatedAt === 'string' ? rawData.updatedAt : new Date().toISOString()),
           });
         } else {
           console.warn("[MindMap] Log not found for ID:", logId);
@@ -152,47 +168,45 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     const subNodeWidth = 130;
     const subNodeHeight = 100; // Perkiraan tinggi node pendukung
     // Jarak dari pusat node utama ke pusat node pendukung
-    const imgSpacingX = subNodeWidth + 90; 
-    const imgSpacingY = subNodeHeight + 90;
+    const imgSpacingX = subNodeWidth + 100; 
+    const imgSpacingY = subNodeHeight + 100; 
     // Offset horizontal untuk tiga item dalam satu baris (kiri/kanan dari item tengah)
-    const imgHorizontalOffsetForThree = subNodeWidth + 30; 
+    const imgHorizontalOffsetForThree = subNodeWidth + 40; 
 
     supportingImages.forEach((img, idx) => {
       const subNodeId = `sub-img-node-${idx}`;
       let position: { x: number; y: number };
 
-      // Tata letak: 1 kiri, 1 kanan, 3 atas, 3 bawah (untuk hingga 8 item)
-      // Urutan pengisian: kiri, kanan, atas-tengah, bawah-tengah, atas-kiri, atas-kanan, bawah-kiri, bawah-kanan
       switch (idx) {
-        case 0: // Kiri
+        case 0: 
           position = { x: mainNodeX - imgSpacingX, y: mainNodeY };
           break;
-        case 1: // Kanan
+        case 1: 
           position = { x: mainNodeX + imgSpacingX, y: mainNodeY };
           break;
-        case 2: // Atas-Tengah
+        case 2: 
           position = { x: mainNodeX, y: mainNodeY - imgSpacingY };
           break;
-        case 3: // Bawah-Tengah
+        case 3: 
           position = { x: mainNodeX, y: mainNodeY + imgSpacingY };
           break;
-        case 4: // Atas-Kiri
+        case 4: 
           position = { x: mainNodeX - imgHorizontalOffsetForThree, y: mainNodeY - imgSpacingY };
           break;
-        case 5: // Atas-Kanan
+        case 5: 
           position = { x: mainNodeX + imgHorizontalOffsetForThree, y: mainNodeY - imgSpacingY };
           break;
-        case 6: // Bawah-Kiri
+        case 6: 
           position = { x: mainNodeX - imgHorizontalOffsetForThree, y: mainNodeY + imgSpacingY };
           break;
-        case 7: // Bawah-Kanan
+        case 7: 
           position = { x: mainNodeX + imgHorizontalOffsetForThree, y: mainNodeY + imgSpacingY };
           break;
-        default: // Fallback untuk lebih dari 8 gambar pendukung
+        default: 
           const fallbackIndex = idx - 8;
           position = { 
             x: mainNodeX - imgHorizontalOffsetForThree + (fallbackIndex * (subNodeWidth + 15)),
-            y: mainNodeY + imgSpacingY + subNodeHeight + 50 // Baris tambahan di bawah
+            y: mainNodeY + imgSpacingY + subNodeHeight + 50 
           }; 
           break;
       }
@@ -201,7 +215,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
         id: subNodeId,
         type: "custom",
         data: { label: img.caption || `Item Gambar ${idx + 1}`, image: img.url },
-        position, // Gunakan posisi yang telah dihitung
+        position, 
         style: {
           width: subNodeWidth,
           minHeight: subNodeHeight,
@@ -230,14 +244,11 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     const relatedLogTitlesArray = currentLogData.relatedLogTitles || [];
 
     if (relatedLogsArray.length > 0) {
-        const relatedNodeW = 130;
-        const relatedNodeH = 60; // Perkiraan tinggi node log terkait
-        const gapBetweenRelated = 30; // Jarak horizontal antar node log terkait
+        const relatedNodeW = 110; // Dikecilkan lagi
+        const relatedNodeH = 45;  // Dikecilkan lagi
+        const gapBetweenRelated = 25; // Jarak horizontal antar node log terkait
         
-        // Posisi Y: di bawah node gambar pendukung terbawah + jarak
-        // Node pendukung terbawah berpusat di mainNodeY + imgSpacingY
-        // Tepi bawah node pendukung terbawah: (mainNodeY + imgSpacingY) + (subNodeHeight / 2)
-        const yPositionForRelatedLogsTop = (mainNodeY + imgSpacingY) + (subNodeHeight / 2) + 40; // 40 adalah jarak vertikal
+        const yPositionForRelatedLogsTop = (mainNodeY + imgSpacingY) + (subNodeHeight / 2) + 90; // Jarak vertikal ditambah lagi
 
         const numRelatedLogs = relatedLogsArray.length;
         const totalWidthOfRelatedBlock = numRelatedLogs * relatedNodeW + Math.max(0, numRelatedLogs - 1) * gapBetweenRelated;
@@ -252,7 +263,7 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
                 type: "custom",
                 data: { label: relatedLogTitlesArray[idx] || `Related Log ${idx + 1}` },
                 position: { x: nodeX, y: yPositionForRelatedLogsTop },
-                style: { // Gaya dari kode asli untuk log terkait
+                style: { 
                     width: relatedNodeW,
                     minHeight: relatedNodeH,
                     display: "flex",
@@ -263,7 +274,8 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
                     borderRadius: "4px",
                     padding: "10px",
                     background: "hsl(var(--muted))",
-                    color: "hsl(var(--muted-foreground))"
+                    color: "hsl(var(--muted-foreground))",
+                    fontSize: "10px", // Perkecil ukuran font
                 },
             });
             newEdges.push({
@@ -299,37 +311,12 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
   return (
     <div className="w-full max-w-5xl mx-auto p-4 md:p-0">
       <div className="mb-4 flex flex-wrap gap-2">
-        {currentLogData?.isPublic ? (
-          <>
-            <Button variant="outline" asChild>
-              <Link href="/public">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Kembali ke Log Publik
-              </Link>
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button variant="outline" asChild>
-              <Link href={`/logs/${logId}`}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Kembali ke Detail Log
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/">
-                <Home className="mr-2 h-4 w-4" />
-                Kembali ke Utama
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/public">
-                <Globe className="mr-2 h-4 w-4" />
-                Lihat Halaman Publik
-              </Link>
-            </Button>
-          </>
-        )}
+        <Button variant="outline" asChild>
+          <Link href="/"> 
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Kembali ke Log Publik
+          </Link>
+        </Button>
       </div>
 
       <div
@@ -380,4 +367,3 @@ export default function MindMap({ logId, logData: initialLogData }: { logId: str
     </div>
   );
 }
-    

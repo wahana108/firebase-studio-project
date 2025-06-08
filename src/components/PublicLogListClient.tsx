@@ -220,14 +220,19 @@ export default function PublicLogListClient() {
                       Related Public Logs:
                     </p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {log.relatedLogTitles.slice(0,3).map((title, idx) => (
-                        <span key={idx} className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full">
-                          {title}
-                        </span>
-                      ))}
-                       {log.relatedLogTitles.length > 3 && (
-                           <span className="text-xs text-muted-foreground">+{log.relatedLogTitles.length - 3} more</span>
-                       )}
+                {(log.relatedLogs || []).slice(0, 3).map((relatedId, idx) => {
+                  const title = log.relatedLogTitles?.[idx] || `Log ${relatedId.substring(0,6)}...`;
+                  return (
+                    <Button key={relatedId} variant="link" size="xs" asChild className="text-xs h-auto p-0.5 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-1.5">
+                      <Link href={`/logs/${relatedId}`}>
+                        {title}
+                      </Link>
+                    </Button>
+                  );
+                })}
+                {(log.relatedLogs?.length || 0) > 3 && (
+                  <span className="text-xs text-muted-foreground p-0.5">+{ (log.relatedLogs?.length || 0) - 3} more</span>
+                )}
                     </div>
                   </div>
                 )}

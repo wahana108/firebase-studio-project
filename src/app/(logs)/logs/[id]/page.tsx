@@ -1,14 +1,14 @@
 // src/app/(logs)/logs/[id]/page.tsx
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, getDoc, Timestamp } from "firebase/firestore"; // Import Timestamp
+import { collection, getDocs, doc, getDoc, Timestamp, query, where } from "firebase/firestore"; // Import Timestamp, query, where
 import type { Log } from "@/types";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 export async function generateStaticParams() {
   try {
-    const logsCollection = collection(db, "logs");
-    const querySnapshot = await getDocs(logsCollection);
+    const logsQuery = query(collection(db, "logs"), where("isPublic", "==", true)); // Hanya log publik
+    const querySnapshot = await getDocs(logsQuery);
     const logIds = querySnapshot.docs.map((doc) => ({
       id: doc.id,
     }));
@@ -21,7 +21,7 @@ export async function generateStaticParams() {
 }
 
 export default async function LogDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+  const { id } = await params; // Perbaikan: await params
   try {
     const logRef = doc(db, "logs", id);
     const logSnap = await getDoc(logRef);
@@ -30,14 +30,36 @@ export default async function LogDetailPage({ params }: { params: { id: string }
       return <div className="container mx-auto p-4 text-center text-destructive">Log not found</div>;
     }
 
+    // Ambil data log terkait dan filter hanya yang publik
+    const rawData = logSnap.data();
+    const relatedLogTitles: string[] = [];
+    const publicRelatedLogIds: string[] = [];
+
+    if (rawData.relatedLogs && Array.isArray(rawData.relatedLogs)) {
+      for (const relatedId of rawData.relatedLogs) {
+        if (typeof relatedId === 'string' && relatedId.trim() !== "") {
+          try {
+            const relatedLogRef = doc(db, "logs", relatedId);
+            const relatedLogSnap = await getDoc(relatedLogRef);
+            if (relatedLogSnap.exists() && relatedLogSnap.data()?.isPublic) {
+              relatedLogTitles.push(relatedLogSnap.data()?.title || "Untitled Related Log");
+              publicRelatedLogIds.push(relatedId);
+            }
+          } catch (e) {
+            console.error(`[LogDetailPage] Error fetching related log title for ID ${relatedId}:`, e);
+          }
+        }
+      }
+    }
+
     const data = logSnap.data();
     const logData: Log = {
       id: logSnap.id,
       title: data.title || "Untitled Log",
       description: data.description || "",
       imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
-      relatedLogs: Array.isArray(data.relatedLogs) ? data.relatedLogs : [],
-      relatedLogTitles: Array.isArray(data.relatedLogTitles) ? data.relatedLogTitles : [],
+      relatedLogs: publicRelatedLogIds, // Gunakan ID log terkait yang sudah difilter publik
+      relatedLogTitles: relatedLogTitles, // Gunakan judul log terkait yang sudah difilter
       isPublic: data.isPublic || false,
       createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
       updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString()),
@@ -63,10 +85,10 @@ export default async function LogDetailPage({ params }: { params: { id: string }
         )}
         <p className="mb-6 whitespace-pre-wrap">{logData.description}</p>
         {logData.relatedLogs && logData.relatedLogs.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-6"> 
             <h2 className="text-xl font-semibold mb-3">Log Terkait</h2>
             <div className="flex flex-wrap gap-3">
-              {(logData.relatedLogs || []).map((relatedId, idx) => (
+              {logData.relatedLogs.map((relatedId, idx) => ( // logData.relatedLogs sudah difilter
                 <Button key={relatedId} variant="outline" size="sm" asChild>
                   <Link href={`/logs/${relatedId}`}>
                     {logData.relatedLogTitles?.[idx] || `Log ${relatedId.substring(0, 6)}...`}
