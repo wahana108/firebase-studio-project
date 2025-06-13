@@ -1,54 +1,43 @@
+import type { Timestamp } from 'firebase/firestore';
 
-export interface Log {
-  id: string;
-  title: string;
-  description: string;
-  imageLink?: string; // External URL for image
-  youtubeLink?: string; // YouTube video link
-  isPublic: boolean;
-  ownerId: string; // Firebase Auth UID
-  createdAt: string; // ISO Date String
-  updatedAt: string; // ISO Date String
-  // Optional: for displaying comment counts or like counts directly on the log
-  commentCount?: number;
-  likeCount?: number;
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
 }
 
-export interface Comment {
-  id: string;
-  logId: string; // To know which log this comment belongs to
-  content: string;
-  userId: string; // Firebase Auth UID of the commenter
-  userName: string; // Display name of the commenter
+export interface LogEntry {
+  id?: string; // Firestore document ID
+  title: string;
+  description: string;
+  imageLink?: string | null; // External image URL or Firebase Storage URL
+  youtubeLink?: string | null; // YouTube video URL
+  isPublic: boolean;
+  ownerId: string; // UID of the user who created the log
+  createdAt: string; // ISO8601 timestamp string
+  updatedAt: string; // ISO8601 timestamp string
+}
+
+export interface CommentEntry {
+  id?: string; // Firestore document ID
+  logId: string; // ID of the log this comment belongs to
+  userId: string; // UID of the user who wrote the comment
+  userName: string; // Display name of the user
   category: 'politics' | 'social' | 'economy' | 'technology' | 'other';
-  createdAt: string; // ISO Date String
+  content: string;
+  createdAt: string; // ISO8601 timestamp string
 }
 
-export interface LikedLog {
-  logId: string; // ID of the log that is liked
-  userId: string; // ID of the user who liked the log
-  createdAt: string; // ISO Date String
+export interface LikedLogEntry {
+  logId: string; // ID of the liked log
+  userId: string; // UID of the user who liked the log
+  createdAt: string; // ISO8601 timestamp string
 }
 
-// For LogForm data
-export type LogFormData = {
-  title: string;
-  description: string;
-  imageLink?: string;
-  youtubeLink?: string;
-  isPublic: boolean;
-};
-
-export type CommentFormData = {
-    content: string;
-    category: 'politics' | 'social' | 'economy' | 'technology' | 'other';
-};
-
-// Developer specific image upload
-export interface DeveloperUploadedImage {
-    logId: string;
-    imageName: string; // e.g., image1.png
-    storagePath: string; // Full path in Firebase Storage
-    downloadURL: string; // Public URL after upload
-    uploadedAt: string; // ISO Date String
+// Props for LogForm component
+export interface LogFormProps {
+  initialData?: Partial<LogEntry>;
+  onSave?: (logId: string) => void; // Callback after successful save
+  isDeveloper?: boolean; // To enable developer-specific features like image upload
 }

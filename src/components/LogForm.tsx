@@ -1,670 +1,229 @@
-
 // src/components/LogForm.tsx
 "use client";
 
-import type { LogFormData } from "@/types";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import React, { useState, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
-import { Send, X } from "lucide-react";
-import { collection, getDocs, query, addDoc, updateDoc, doc } from "firebase/firestore";
-import { db, storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from 'react';
+import { useForm, SubmitHandler } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { db, storage } from '@/lib/firebase';
+import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useAuth } from '@/contexts/AuthContext';
+import type { LogEntry, LogFormProps } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { useRouter } from 'next/navigation';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const MAX_SUPPORTING_ITEMS = 8;
-
-const formSchema = z.object({
-  title: z.string().min(1, "Title is required").max(100, "Title must be 100 characters or less"),
-  description: z.string().min(1, "Description is required").max(500, "Description must be 500 characters or less"),
-  mainImage: z
-    .custom<File | null>((val) => val === null || val instanceof File, "Expected a File or null")
-    .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Main image size must be 5MB or less.`)
-    .refine(
-      (file) => !file || ACCEPTED_IMAGE_TYPES.includes(file.type),
-      "Main image must be .jpg, .jpeg, .png, or .webp."
-    )
-    .optional(),
-  mainCaption: z.string().max(200, "Main caption must be 200 characters or less").optional(),
-  supportingItems: z.array(
-    z.object({
-      image: z
-        .custom<File | null>((val) => val === null || val instanceof File, "Expected a File or null")
-        .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Supporting image size must be 5MB or less.`)
-        .refine(
-          (file) => !file || ACCEPTED_IMAGE_TYPES.includes(file.type),
-          "Supporting images must be .jpg, .jpeg, .png, or .webp."
-        )
-        .optional(),
-      caption: z.string().max(200, "Caption must be 200 characters or less").optional(),
+const logFormSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(150),
+  description: z.string().min(1, 'Description is required').max(5000),
+  imageLink: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+  youtubeLink: z.string()
+    .url('Must be a valid YouTube URL')
+    .refine(val => !val || val.includes('youtube.com') || val.includes('youtu.be'), {
+      message: 'Must be a valid YouTube URL',
     })
-  ).length(MAX_SUPPORTING_ITEMS, `Exactly ${MAX_SUPPORTING_ITEMS} supporting items required.`),
-  relatedLogIds: z.array(z.string()).optional(),
-  isPublic: z.boolean().optional().default(false),
+    .or(z.literal(''))
+    .optional(),
+  isPublic: z.boolean().default(false),
+  developerImageFile: z.custom<FileList | null>(val => val === null || val instanceof FileList).optional(), // For developer upload
 });
 
-type FormValues = z.infer<typeof formSchema>;
-interface ExistingImage {
-  url: string | null;
-  isMain?: boolean;
-  caption?: string;
-}
+type LogFormValues = z.infer<typeof logFormSchema>;
 
-interface LogFormComponentProps {
-  initialData?: LogFormData & { imageUrls?: ExistingImage[]; relatedLogs?: string[]; isPublic?: boolean };
-  onLogCreated?: () => void;
-  variant?: 'card' | 'embedded';
-  action?: (prevState: any, formData: FormData) => Promise<any>;
-}
+const DEVELOPER_UID = 'REPLACE_WITH_YOUR_ACTUAL_GOOGLE_UID'; // Replace this!
 
-function LogFormComponent({
-  initialData,
-  onLogCreated,
-  variant = 'card',
-}: LogFormComponentProps) {
-  const [isPending, setIsPending] = useState(false);
-  const { toast } = useToast();
-  const [mainImagePreview, setMainImagePreview] = useState<string | null>(null);
-  const [supportingItemPreviews, setSupportingItemPreviews] = useState<(string | null)[]>(Array(MAX_SUPPORTING_ITEMS).fill(null));
-  const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
-  const [allLogs, setAllLogs] = useState<{ id: string; title: string }[]>([]);
-  const formRef = useRef<HTMLFormElement>(null);
+export default function LogForm({ initialData, onSave }: LogFormProps) {
+  const { currentUser } = useAuth();
   const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isDeveloper = currentUser?.uid === DEVELOPER_UID;
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors },
+  } = useForm<LogFormValues>({
+    resolver: zodResolver(logFormSchema),
     defaultValues: {
-      title: initialData?.title || "",
-      description: initialData?.description || "",
-      mainImage: null,
-      mainCaption: initialData?.imageUrls?.find((img) => img.isMain)?.caption || "",
-      supportingItems: Array(MAX_SUPPORTING_ITEMS)
-        .fill(null)
-        .map((_, i) => {
-          const supImg = initialData?.imageUrls?.filter((img) => !img.isMain)[i];
-          return {
-            image: null,
-            caption: supImg?.caption || "",
-          };
-        }),
-      relatedLogIds: initialData?.relatedLogs || [],
+      title: initialData?.title || '',
+      description: initialData?.description || '',
+      imageLink: initialData?.imageLink || '',
+      youtubeLink: initialData?.youtubeLink || '',
       isPublic: initialData?.isPublic || false,
+      developerImageFile: null,
     },
   });
 
-  const watchedRelatedLogIds = form.watch("relatedLogIds", initialData?.relatedLogs || []);
-
   useEffect(() => {
-    async function fetchLogs() {
+    if (initialData) {
+      setValue('title', initialData.title || '');
+      setValue('description', initialData.description || '');
+      setValue('imageLink', initialData.imageLink || '');
+      setValue('youtubeLink', initialData.youtubeLink || '');
+      setValue('isPublic', initialData.isPublic || false);
+    }
+  }, [initialData, setValue]);
+
+  const onSubmit: SubmitHandler<LogFormValues> = async (data) => {
+    if (!currentUser) {
+      setError('You must be logged in to create or update a log.');
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+
+    let finalImageLink = data.imageLink || null;
+
+    // Handle developer image upload
+    if (isDeveloper && data.developerImageFile && data.developerImageFile.length > 0) {
+      const file = data.developerImageFile[0];
+      const storagePath = `logs/${initialData?.id || Date.now()}/images/${file.name}`;
+      const imageRef = ref(storage, storagePath);
       try {
-        console.log("[LogForm] Fetching logs from Firestore");
-        const logsCollection = collection(db, "logs");
-        const logsQuery = query(logsCollection);
-        const querySnapshot = await getDocs(logsQuery);
-        const logs = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          title: doc.data().title as string,
-        }));
-        const sortedLogs = logs.sort((a, b) => a.title.localeCompare(b.title));
-        setAllLogs(sortedLogs.filter((log) => log.id !== initialData?.id));
-      } catch (error) {
-        console.error("[LogForm] Error fetching logs:", error);
-        toast({
-          title: "Error",
-          description: "Could not fetch logs for relations.",
-          variant: "destructive",
-        });
-      }
-    }
-    fetchLogs();
-  }, [initialData?.id, toast]);
-
-  useEffect(() => {
-    if (initialData?.imageUrls) {
-      console.log("[LogForm] Updating previews with initialData.imageUrls:", initialData.imageUrls);
-      const mainImgData = initialData.imageUrls.find((img) => img.isMain);
-      const supImgsData = initialData.imageUrls.filter((img) => !img.isMain);
-
-      if (mainImagePreview && mainImagePreview.startsWith("blob:")) {
-        URL.revokeObjectURL(mainImagePreview);
-      }
-      setMainImagePreview(mainImgData?.url || null);
-
-      const newSupportingItemPreviews = Array(MAX_SUPPORTING_ITEMS).fill(null);
-      supImgsData.slice(0, MAX_SUPPORTING_ITEMS).forEach((img, index) => {
-        if (img.url) {
-          newSupportingItemPreviews[index] = img.url;
-        }
-      });
-      supportingItemPreviews.forEach((preview) => {
-        if (preview && preview.startsWith("blob:")) {
-          URL.revokeObjectURL(preview);
-        }
-      });
-      setSupportingItemPreviews(newSupportingItemPreviews);
-      setExistingImages(initialData.imageUrls);
-    } else {
-      if (mainImagePreview && mainImagePreview.startsWith("blob:")) {
-        URL.revokeObjectURL(mainImagePreview);
-      }
-      setMainImagePreview(null);
-      supportingItemPreviews.forEach((preview) => {
-        if (preview && preview.startsWith("blob:")) {
-          URL.revokeObjectURL(preview);
-        }
-      });
-      setSupportingItemPreviews(Array(MAX_SUPPORTING_ITEMS).fill(null));
-      setExistingImages([]);
-    }
-    form.reset({
-      title: initialData?.title || "",
-      description: initialData?.description || "",
-      mainImage: null,
-      mainCaption: initialData?.imageUrls?.find((img) => img.isMain)?.caption || "",
-      supportingItems: Array(MAX_SUPPORTING_ITEMS)
-        .fill(null)
-        .map((_, i) => {
-          const supImg = initialData?.imageUrls?.filter((img) => !img.isMain)[i];
-          return {
-            image: null,
-            caption: supImg?.caption || "",
-          };
-        }),
-      relatedLogIds: initialData?.relatedLogs || [],
-      isPublic: initialData?.isPublic || false,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData]);
-
-  const handleMainImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && file.size > 0) {
-      if (file.size > MAX_FILE_SIZE) {
-        toast({ title: "Error", description: "Main image size exceeds 5MB.", variant: "destructive" });
-        event.target.value = "";
-        form.setValue("mainImage", null, { shouldValidate: true });
+        await uploadBytes(imageRef, file);
+        finalImageLink = await getDownloadURL(imageRef);
+      } catch (uploadError) {
+        console.error('Error uploading image:', uploadError);
+        setError('Failed to upload image. Please try again.');
+        setIsSubmitting(false);
         return;
       }
-      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-        toast({ title: "Error", description: "Main image must be .jpg, .jpeg, .png, or .webp.", variant: "destructive" });
-        event.target.value = "";
-        form.setValue("mainImage", null, { shouldValidate: true });
-        return;
-      }
-      if (mainImagePreview && mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
-      setMainImagePreview(URL.createObjectURL(file));
-      form.setValue("mainImage", file, { shouldValidate: true });
-      if (mainImagePreview && existingImages.some((img) => img.isMain && img.url === mainImagePreview)) {
-        setExistingImages((prev) => prev.filter((img) => !(img.isMain && img.url === mainImagePreview)));
-      }
-    } else {
-      if (mainImagePreview && mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
-      setMainImagePreview(null);
-      form.setValue("mainImage", null, { shouldValidate: true });
-      event.target.value = "";
-    }
-  };
-
-  const handleSupportingItemChange = (index: number, field: "image" | "caption", value: File | string | null) => {
-    const currentFormValues = form.getValues("supportingItems");
-    const newPreviews = [...supportingItemPreviews];
-    let updatedItem = { ...currentFormValues[index] };
-
-    if (field === "image") {
-      const file = value instanceof File && value.size > 0 ? value : null;
-      const inputElement = document.getElementById(`supporting-image-${index}`) as HTMLInputElement;
-      const oldPreviewUrl = newPreviews[index];
-
-      if (newPreviews[index] && newPreviews[index]!.startsWith("blob:")) {
-        URL.revokeObjectURL(newPreviews[index]!);
-      }
-      if (file) {
-        if (file.size > MAX_FILE_SIZE) {
-          toast({ title: "Error", description: `Supporting image ${index + 1} size exceeds 5MB.`, variant: "destructive" });
-          if (inputElement) inputElement.value = "";
-          updatedItem.image = null;
-          newPreviews[index] = null;
-          form.setValue(`supportingItems.${index}.image`, null, { shouldValidate: true });
-          setSupportingItemPreviews(newPreviews);
-          return;
-        }
-        if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-          toast({ title: "Error", description: `Supporting image ${index + 1} must be .jpg, .jpeg, .png, or .webp.`, variant: "destructive" });
-          if (inputElement) inputElement.value = "";
-          updatedItem.image = null;
-          newPreviews[index] = null;
-          form.setValue(`supportingItems.${index}.image`, null, { shouldValidate: true });
-          setSupportingItemPreviews(newPreviews);
-          return;
-        }
-        newPreviews[index] = URL.createObjectURL(file);
-        updatedItem.image = file;
-        if (oldPreviewUrl && existingImages.some((img) => !img.isMain && img.url === oldPreviewUrl)) {
-          setExistingImages((prev) => prev.filter((img) => img.url !== oldPreviewUrl));
-        }
-      } else {
-        newPreviews[index] = null;
-        updatedItem.image = null;
-        if (inputElement) inputElement.value = "";
-      }
-    } else if (field === "caption" && typeof value === "string") {
-      updatedItem.caption = value;
     }
 
-    setSupportingItemPreviews(newPreviews);
-    const newSupportingItemsArray = currentFormValues.map((item, i) => (i === index ? updatedItem : item));
-    form.setValue("supportingItems", newSupportingItemsArray, { shouldValidate: true });
-  };
-
-  const removeMainImage = () => {
-    const urlToRemove = mainImagePreview;
-    if (mainImagePreview && mainImagePreview.startsWith("blob:")) URL.revokeObjectURL(mainImagePreview);
-    setMainImagePreview(null);
-    form.setValue("mainImage", null, { shouldValidate: true });
-    const fileInput = document.getElementById("main-image") as HTMLInputElement;
-    if (fileInput) fileInput.value = "";
-    if (urlToRemove) {
-      setExistingImages((prev) => prev.filter((img) => !(img.isMain && img.url === urlToRemove)));
-    }
-  };
-
-  const removeSupportingImage = (index: number) => {
-    const newPreviews = [...supportingItemPreviews];
-    const urlToRemove = newPreviews[index];
-
-    if (newPreviews[index] && newPreviews[index]!.startsWith("blob:")) {
-      URL.revokeObjectURL(newPreviews[index]!);
-    }
-    newPreviews[index] = null;
-    setSupportingItemPreviews(newPreviews);
-
-    const currentFormValues = form.getValues("supportingItems");
-    const updatedItem = { ...currentFormValues[index], image: null };
-    const newSupportingItemsArray = currentFormValues.map((item, i) => (i === index ? updatedItem : item));
-    form.setValue("supportingItems", newSupportingItemsArray, { shouldValidate: true });
-
-    const fileInput = document.getElementById(`supporting-image-${index}`) as HTMLInputElement;
-    if (fileInput) fileInput.value = "";
-
-    if (urlToRemove) {
-      setExistingImages((prev) => prev.filter((img) => img.url !== urlToRemove));
-    }
-  };
-
-  const toggleLogSelection = (logId: string) => {
-    console.log("[LogForm] Toggling log selection:", logId);
-    const currentSelectedRHF = form.getValues("relatedLogIds") || [];
-    let newSelectedRHF;
-    if (currentSelectedRHF.includes(logId)) {
-      newSelectedRHF = currentSelectedRHF.filter((id) => id !== logId);
-    } else {
-      newSelectedRHF = [...currentSelectedRHF, logId];
-    }
-    console.log("[LogForm] New RHF relatedLogIds:", newSelectedRHF);
-    form.setValue("relatedLogIds", newSelectedRHF, { shouldValidate: true });
-  };
-
-  const onClientSubmit = async (data: FormValues) => {
-    console.log("[LogForm] onClientSubmit called with data:", data);
-    setIsPending(true);
+    const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt'> = {
+      title: data.title,
+      description: data.description,
+      imageLink: finalImageLink,
+      youtubeLink: data.youtubeLink || null,
+      isPublic: data.isPublic,
+      ownerId: currentUser.uid,
+    };
 
     try {
-      const imageUrls: ExistingImage[] = [];
-
-      let mainImageUrl: string | null = null;
-      if (data.mainImage instanceof File) {
-        console.log("[LogForm] Uploading main image:", data.mainImage.name);
-        const mainImageRef = ref(storage, `logs/${Date.now()}_${data.mainImage.name}`);
-        await uploadBytes(mainImageRef, data.mainImage);
-        mainImageUrl = await getDownloadURL(mainImageRef);
-        imageUrls.push({ url: mainImageUrl, isMain: true, caption: data.mainCaption });
-      } else if (existingImages.some((img) => img.isMain && mainImagePreview === img.url)) {
-        const existingMainImage = existingImages.find((img) => img.isMain && mainImagePreview === img.url);
-        if (existingMainImage) {
-          imageUrls.push({...existingMainImage, caption: data.mainCaption});
-        }
-      } else if (!data.mainImage && data.mainCaption){
-         imageUrls.push({ url: null, isMain: true, caption: data.mainCaption });
-      }
-
-      for (let i = 0; i < data.supportingItems.length; i++) {
-        const item = data.supportingItems[i];
-        const previewUrl = supportingItemPreviews[i];
-        if (item.image instanceof File) {
-          console.log("[LogForm] Uploading supporting image", i, ":", item.image.name);
-          const supportingImageRef = ref(storage, `logs/${Date.now()}_${item.image.name}`);
-          await uploadBytes(supportingImageRef, item.image);
-          const supportingImageUrl = await getDownloadURL(supportingImageRef);
-          imageUrls.push({ url: supportingImageUrl, isMain: false, caption: item.caption });
-        } else if (previewUrl && existingImages.some((img) => img.url === previewUrl && !img.isMain)) {
-          const existingSupportingImage = existingImages.find((img) => img.url === previewUrl && !img.isMain);
-          if (existingSupportingImage) {
-            imageUrls.push({ ...existingSupportingImage, caption: item.caption });
-          }
-        } else if (!item.image && item.caption){
-           imageUrls.push({ url: null, isMain: false, caption: item.caption });
-        }
-      }
-
-      let mainImageFound = false;
-      const processedImageUrls = imageUrls.map(img => {
-          if (img.isMain) {
-              if (!mainImageFound && img.url) {
-                  mainImageFound = true;
-                  return img;
-              } else if (mainImageFound && img.url) {
-                  return { ...img, isMain: false };
-              }
-          }
-          return img;
-      });
-
-      if (!mainImageFound && processedImageUrls.some(img => img.url)) {
-          const firstValidImageIndex = processedImageUrls.findIndex(img => img.url);
-          if (firstValidImageIndex !== -1) {
-              processedImageUrls[firstValidImageIndex].isMain = true;
-              mainImageFound = true;
-          }
-      }
-
-      const logData = {
-        title: data.title,
-        description: data.description,
-        imageUrls: processedImageUrls.filter((img) => img.url || img.caption),
-        relatedLogs: data.relatedLogIds || [],
-        relatedLogTitles: (data.relatedLogIds || []).map(
-          (id) => allLogs.find((log) => log.id === id)?.title || `Log ${id.substring(0, 6)}...`
-        ),
-        isPublic: data.isPublic || false, // Save isPublic status
-        updatedAt: new Date().toISOString(),
-        ...(initialData?.id ? {} : { createdAt: new Date().toISOString() }),
-        ...(initialData?.createdAt && initialData?.id ? { createdAt: initialData.createdAt } : {}),
-      };
-
-      console.log("[LogForm] Saving log data to Firestore:", logData);
-
-      let logId: string;
+      let docId = initialData?.id;
       if (initialData?.id) {
-        const logRef = doc(db, "logs", initialData.id);
-        await updateDoc(logRef, logData);
-        logId = initialData.id;
-        toast({ title: "Success!", description: "Log updated successfully." });
-        console.log("[LogForm] Log updated. ID:", logId);
+        // Update existing log
+        const logRef = doc(db, 'logs', initialData.id);
+        await updateDoc(logRef, {
+          ...logDataToSave,
+          updatedAt: new Date().toISOString(),
+        });
+        console.log('[LogForm] Log updated successfully:', initialData.id);
       } else {
-        const logsCollection = collection(db, "logs");
-        const docRef = await addDoc(logsCollection, { ...logData, createdAt: new Date().toISOString() });
-        logId = docRef.id;
-        toast({ title: "Success!", description: "Log created successfully." });
-        console.log("[LogForm] Log created. ID:", logId);
+        // Create new log
+        const docRef = await addDoc(collection(db, 'logs'), {
+          ...logDataToSave,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        docId = docRef.id;
+        console.log('[LogForm] Log created successfully:', docRef.id);
       }
-
-      form.reset({
-        title: "",
-        description: "",
-        mainImage: null,
-        mainCaption: "",
-        supportingItems: Array(MAX_SUPPORTING_ITEMS).fill({ image: null, caption: "" }),
-        relatedLogIds: [],
-        isPublic: false,
-      });
-      if (mainImagePreview && mainImagePreview.startsWith("blob:")) {
-        URL.revokeObjectURL(mainImagePreview);
+      reset();
+      if (onSave && docId) {
+        onSave(docId);
+      } else if (docId) {
+        router.push('/'); // Redirect to dashboard after creation if no specific onSave
       }
-      setMainImagePreview(null);
-      supportingItemPreviews.forEach(preview => {
-        if (preview && preview.startsWith("blob:")) URL.revokeObjectURL(preview);
-      });
-      setSupportingItemPreviews(Array(MAX_SUPPORTING_ITEMS).fill(null));
-      setExistingImages([]);
-      if (formRef.current) formRef.current.reset();
-
-      if (onLogCreated) {
-        onLogCreated();
-      }
-      console.log("[LogForm] Redirecting to /mindmap/", logId);
-      router.push(`/mindmap/${logId}`);
-    } catch (error) {
-      console.error("[LogForm] Submission error:", error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "An unknown error occurred.",
-        variant: "destructive",
-      });
+    } catch (e) {
+      console.error('Error saving log:', e);
+      setError('Failed to save log. Please try again.');
     } finally {
-      setIsPending(false);
+      setIsSubmitting(false);
     }
   };
 
-  const formContent = (
-    <>
-      <div className="space-y-2">
-        <Label htmlFor="title">Title</Label>
-        <Input id="title" placeholder="Enter topic title" {...form.register("title")} className={form.formState.errors.title ? "border-destructive" : ""} />
-        {form.formState.errors.title && (<p className="text-sm text-destructive">{form.formState.errors.title.message}</p>)}
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea id="description" placeholder="Describe your topic" rows={4} {...form.register("description")} className={form.formState.errors.description ? "border-destructive" : ""} />
-        {form.formState.errors.description && (<p className="text-sm text-destructive">{form.formState.errors.description.message}</p>)}
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 p-4 md:p-6 bg-card text-card-foreground rounded-lg shadow-md max-w-2xl mx-auto">
+      <h2 className="text-2xl font-semibold text-center mb-6">
+        {initialData?.id ? 'Edit Log' : 'Create New Log'}
+      </h2>
+
+      {error && <p className="text-sm text-red-500 bg-red-100 p-3 rounded-md">{error}</p>}
+
+      <div>
+        <Label htmlFor="title" className="block text-sm font-medium mb-1">Title</Label>
+        <Input
+          id="title"
+          {...register('title')}
+          className="w-full"
+          placeholder="Enter log title"
+        />
+        {errors.title && <p className="text-sm text-red-500 mt-1">{errors.title.message}</p>}
       </div>
 
-      <div className="space-y-4">
-        <Label>Main Idea (optional)</Label>
-        <div className="p-4 border rounded-md space-y-2 flex flex-col items-center">
-          <div className="flex items-center justify-between w-full">
-            <Label htmlFor="main-image">Main Image</Label>
-            {mainImagePreview && (
-              <Button type="button" variant="destructive" size="icon" className="h-6 w-6" onClick={removeMainImage}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+      <div>
+        <Label htmlFor="description" className="block text-sm font-medium mb-1">Description</Label>
+        <Textarea
+          id="description"
+          {...register('description')}
+          rows={5}
+          className="w-full"
+          placeholder="Enter log description"
+        />
+        {errors.description && <p className="text-sm text-red-500 mt-1">{errors.description.message}</p>}
+      </div>
+
+      <div>
+        <Label htmlFor="imageLink" className="block text-sm font-medium mb-1">Image Link (Optional)</Label>
+        <Input
+          id="imageLink"
+          type="url"
+          {...register('imageLink')}
+          className="w-full"
+          placeholder="https://example.com/image.jpg"
+        />
+        {errors.imageLink && <p className="text-sm text-red-500 mt-1">{errors.imageLink.message}</p>}
+      </div>
+
+      {isDeveloper && (
+        <div>
+          <Label htmlFor="developerImageFile" className="block text-sm font-medium mb-1">Upload Image (Developer Only)</Label>
           <Input
-            id="main-image"
+            id="developerImageFile"
             type="file"
-            accept="image/*"
-            className="w-full max-w-xs"
-            onChange={handleMainImageChange}
+            {...register('developerImageFile')}
+            accept="image/png, image/jpeg, image/gif, image/webp"
+            className="w-full file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
           />
-          {mainImagePreview && (
-            <div className="relative h-32 w-32 mt-2">
-              <img
-                src={mainImagePreview}
-                alt="Main Image Preview"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                className="rounded-md border"
-              />
-            </div>
-          )}
-          {form.formState.errors.mainImage && (<p className="text-sm text-destructive">{form.formState.errors.mainImage.message}</p>)}
-
-          <div className="w-full space-y-2">
-            <Label htmlFor="main-caption">Main Caption</Label>
-            <Input
-              id="main-caption"
-              placeholder="Enter main caption (max 200 characters)"
-              {...form.register("mainCaption")}
-              className={form.formState.errors.mainCaption ? "border-destructive" : ""}
-            />
-            {form.formState.errors.mainCaption && (<p className="text-sm text-destructive">{form.formState.errors.mainCaption.message}</p>)}
-          </div>
+          <p className="text-xs text-muted-foreground mt-1">If an image is uploaded here, it will override the Image Link above.</p>
+          {errors.developerImageFile && <p className="text-sm text-red-500 mt-1">{errors.developerImageFile.message}</p>}
         </div>
+      )}
+
+      <div>
+        <Label htmlFor="youtubeLink" className="block text-sm font-medium mb-1">YouTube Link (Optional)</Label>
+        <Input
+          id="youtubeLink"
+          type="url"
+          {...register('youtubeLink')}
+          className="w-full"
+          placeholder="https://www.youtube.com/watch?v=your_video_id"
+        />
+        {errors.youtubeLink && <p className="text-sm text-red-500 mt-1">{errors.youtubeLink.message}</p>}
       </div>
 
-      <div className="space-y-4">
-        <Label>Supporting Items (up to {MAX_SUPPORTING_ITEMS}, optional images/captions)</Label>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-1/3">Image</TableHead>
-              <TableHead>Caption</TableHead>
-              <TableHead className="w-12 text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: MAX_SUPPORTING_ITEMS }).map((_, index) => (
-              <TableRow key={`supporting-item-${index}`}>
-                <TableCell>
-                  <Input
-                    id={`supporting-image-${index}`}
-                    type="file"
-                    accept="image/*"
-                    className="w-full"
-                    onChange={(e) => handleSupportingItemChange(index, "image", e.target.files?.[0] || null)}
-                  />
-                  {supportingItemPreviews[index] && (
-                    <div className="relative h-16 w-16 mt-2">
-                      <img
-                        src={supportingItemPreviews[index]!}
-                        alt={`Supporting Item ${index + 1} Preview`}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                        className="rounded-md border"
-                      />
-                    </div>
-                  )}
-                  {form.formState.errors.supportingItems?.[index]?.image && (
-                    <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.image?.message as string}</p>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Input
-                    id={`supporting-caption-${index}`}
-                    placeholder="Enter caption"
-                    {...form.register(`supportingItems.${index}.caption`)}
-                    className={form.formState.errors.supportingItems?.[index]?.caption ? "border-destructive" : ""}
-                  />
-                  {form.formState.errors.supportingItems?.[index]?.caption && (
-                    <p className="text-sm text-destructive">{form.formState.errors.supportingItems[index]?.caption?.message}</p>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  {(supportingItemPreviews[index] || form.getValues(`supportingItems.${index}.image`)) && (
-                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeSupportingImage(index)}>
-                      <X className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {form.formState.errors.supportingItems && typeof form.formState.errors.supportingItems.message === "string" && (
-          <p className="text-sm text-destructive mt-1">{form.formState.errors.supportingItems.message}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label>Related Logs</Label>
-        <div className="border rounded-md p-4 max-h-40 overflow-y-auto bg-muted/50">
-          {allLogs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No other logs available to relate.</p>
-          ) : (
-            allLogs.map((log) => (
-              <div key={log.id} className="flex items-center space-x-2 py-1 hover:bg-muted/80 rounded px-2 transition-colors">
-                <Checkbox
-                  id={`related-log-${log.id}`}
-                  checked={(watchedRelatedLogIds || []).includes(log.id)}
-                  onCheckedChange={() => toggleLogSelection(log.id)}
-                />
-                <Label htmlFor={`related-log-${log.id}`} className="text-sm font-normal flex-1 cursor-pointer py-1">
-                  {log.title}
-                </Label>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {(watchedRelatedLogIds || []).map((id) => {
-            const relatedLog = allLogs.find((log) => log.id === id);
-            return (
-              <div key={id} className="flex items-center bg-primary/10 text-primary-foreground px-2 py-1 rounded-md text-xs">
-                {relatedLog?.title || `Log ID: ${id.substring(0, 6)}...`}
-                <button
-                  type="button"
-                  onClick={() => toggleLogSelection(id)}
-                  className="ml-2 text-destructive hover:text-destructive-foreground"
-                  aria-label={`Remove related log: ${relatedLog?.title || id}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        {form.formState.errors.relatedLogIds && (
-          <p className="text-sm text-destructive">{form.formState.errors.relatedLogIds.message}</p>
-        )}
-      </div>
-
-      <div className="flex items-center space-x-2 pt-2">
+      <div className="flex items-center space-x-2">
         <Checkbox
           id="isPublic"
-          {...form.register("isPublic")}
+          {...register('isPublic')}
           defaultChecked={initialData?.isPublic || false}
-          onCheckedChange={(checked) => form.setValue("isPublic", Boolean(checked))}
         />
-        <Label htmlFor="isPublic" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-          Make this log public (visible to everyone)
+        <Label htmlFor="isPublic" className="text-sm font-medium">
+          Make this log public
         </Label>
       </div>
-      {form.formState.errors.isPublic && (
-        <p className="text-sm text-destructive">{form.formState.errors.isPublic.message}</p>
-      )}
-    </>
-  );
 
-  if (variant === 'embedded') {
-    return (
-      <form ref={formRef} onSubmit={form.handleSubmit(onClientSubmit)} className="space-y-6">
-        <div className="space-y-4">
-         {formContent}
-        </div>
-        <div className="mt-6">
-          <Button type="submit" className="w-full" disabled={isPending || form.formState.isSubmitting}>
-            <Send className="mr-2 h-4 w-4" />
-            {isPending || form.formState.isSubmitting
-              ? (initialData ? "Updating Log..." : "Adding Log...")
-              : (initialData ? "Update Log" : "Add Log")
-            }
-          </Button>
-        </div>
-      </form>
-    );
-  }
-
-  return (
-    <Card className="w-full max-w-2xl mx-auto shadow-lg">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold">{initialData ? "Edit Log" : "Create New Log"}</CardTitle>
-        <CardDescription>Create or edit your mind map with a main idea and up to {MAX_SUPPORTING_ITEMS} supporting items.</CardDescription>
-      </CardHeader>
-      <form ref={formRef} onSubmit={form.handleSubmit(onClientSubmit)} className="space-y-6">
-        <CardContent className="space-y-4">
-          {formContent}
-        </CardContent>
-        <CardFooter>
-          <Button type="submit" className="w-full" disabled={isPending || form.formState.isSubmitting}>
-            <Send className="mr-2 h-4 w-4" />
-            {isPending || form.formState.isSubmitting
-              ? (initialData ? "Updating Log..." : "Adding Log...")
-              : (initialData ? "Update Log" : "Add Log")
-            }
-          </Button>
-        </CardFooter>
-      </form>
-    </Card>
+      <Button type="submit" disabled={isSubmitting} className="w-full">
+        {isSubmitting ? (initialData?.id ? 'Updating...' : 'Creating...') : (initialData?.id ? 'Update Log' : 'Create Log')}
+      </Button>
+    </form>
   );
 }
-
-export const LogForm = React.memo(LogFormComponent);

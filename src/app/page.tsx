@@ -1,53 +1,80 @@
-
+// src/app/page.tsx (Dashboard)
 "use client";
-import { useAuth } from "@/contexts/AuthContext";
-import Link from "next/link";
-// We will create LogForm and LogList components later
-// import LogForm from "@/components/LogForm";
-// import LogList from "@/components/LogList";
 
-export default function HomePage() {
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import type { LogEntry } from '@/types';
+import LogList from '@/components/LogList';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { PlusCircle } from 'lucide-react';
+
+export default function DashboardPage() {
   const { currentUser, loading } = useAuth();
+  const router = useRouter();
+  const [userLogs, setUserLogs] = useState<LogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
 
-  if (loading) {
-    return <div className="text-center py-10">Loading user data...</div>;
+  useEffect(() => {
+    if (!loading && !currentUser) {
+      router.push('/login');
+    }
+  }, [currentUser, loading, router]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const fetchUserLogs = async () => {
+        setIsLoadingLogs(true);
+        try {
+          const logsCollection = collection(db, 'logs');
+          const q = query(
+            logsCollection,
+            where('ownerId', '==', currentUser.uid),
+            orderBy('updatedAt', 'desc')
+          );
+          const querySnapshot = await getDocs(q);
+          const logsData = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          } as LogEntry));
+          setUserLogs(logsData);
+        } catch (error) {
+          console.error("Error fetching user's logs:", error);
+        } finally {
+          setIsLoadingLogs(false);
+        }
+      };
+      fetchUserLogs();
+    }
+  }, [currentUser]);
+
+  if (loading || isLoadingLogs) {
+    return <div className="container mx-auto p-4 text-center">Loading dashboard...</div>;
   }
 
   if (!currentUser) {
-    // This should ideally be handled by AuthContext redirect, but as a fallback:
-    return (
-        <div className="text-center py-10">
-            <p>Please log in to access this page.</p>
-            <Link href="/login" className="text-primary hover:underline">
-                Go to Login
-            </Link>
-        </div>
-    );
+    return null; // Should be redirected by the first useEffect
   }
 
   return (
-    <div className="container mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-primary">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome, {currentUser.displayName || "User"}!</p>
-      </header>
-
-      <section className="mb-8 p-6 bg-card border rounded-lg shadow">
-        <h2 className="text-2xl font-semibold mb-4">Create New Log</h2>
-        {/* Placeholder for LogForm - to be implemented */}
-        {/* <LogForm /> */}
-         <Link href="/create-log" className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-md">
-            Create Log (Placeholder Link)
+    <div className="container mx-auto p-4 md:p-8 min-h-screen">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Your Logs</h1>
+        <Link href="/create-log">
+          <Button>
+            <PlusCircle size={20} className="mr-2" /> Create New Log
+          </Button>
         </Link>
-        <p className="mt-4 text-sm text-muted-foreground">LogForm component will be here.</p>
-      </section>
-
-      <section>
-        <h2 className="text-2xl font-semibold mb-4">Your Logs</h2>
-        {/* Placeholder for LogList - to be implemented */}
-        {/* <LogList ownerId={currentUser.uid} /> */}
-        <p className="text-sm text-muted-foreground">LogList component (displaying your logs) will be here.</p>
-      </section>
+      </div>
+      
+      <LogList 
+        logs={userLogs} 
+        showControls={true} 
+        emptyStateMessage="You haven't created any logs yet. Get started by creating one!"
+      />
     </div>
   );
 }
