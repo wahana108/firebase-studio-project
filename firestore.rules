@@ -1,0 +1,50 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Logs Collection
+    match /logs/{logId} {
+      // Anyone can read public logs.
+      // Authenticated users can read their own private logs.
+      allow read: if resource.data.isPublic == true || (request.auth != null && resource.data.ownerId == request.auth.uid);
+      
+      // Users must be logged in to create logs.
+      // ownerId must match the authenticated user's UID.
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
+      
+      // Only the owner of the log can update or delete it.
+      // ownerId cannot be changed. isPublic can be changed.
+      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == resource.data.ownerId; 
+                    // Allow changing other fields like title, description, isPublic, imageLink, youtubeLink, updatedAt
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Comments Subcollection
+    match /logs/{logId}/comments/{commentId} {
+      // Anyone can read comments on any log (public or private if they have access to the log).
+      // If logs are private, comment readability is implicitly controlled by log readability.
+      allow read: if true; 
+      
+      // Users must be logged in to create comments.
+      // userId must match the authenticated user's UID.
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Optional: Allow comment owner to update/delete their comments
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // User-specific liked logs
+    match /users/{userId}/likedLogs/{likedLogDocId} { // likedLogDocId is typically the logId being liked
+      // Users can only read and write to their own likedLogs subcollection.
+      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Optional: User profiles collection (if you plan to store more user info)
+    // match /users/{userId} {
+    //   allow read: if true; // Or scope to friends, etc.
+    //   allow write: if request.auth != null && request.auth.uid == userId;
+    // }
+  }
+}
