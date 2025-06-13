@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export interface UserProfile {
@@ -17,14 +18,18 @@ export interface LogEntry {
   ownerId: string; // UID of the user who created the log
   createdAt: string; // ISO8601 timestamp string
   updatedAt: string; // ISO8601 timestamp string
+  commentCount?: number; // Optional: for denormalized comment count
 }
+
+export const commentCategories = ['politics', 'social', 'economy', 'technology', 'other'] as const;
+export type CommentCategory = typeof commentCategories[number];
 
 export interface CommentEntry {
   id?: string; // Firestore document ID
   logId: string; // ID of the log this comment belongs to
   userId: string; // UID of the user who wrote the comment
   userName: string; // Display name of the user
-  category: 'politics' | 'social' | 'economy' | 'technology' | 'other';
+  category: CommentCategory;
   content: string;
   createdAt: string; // ISO8601 timestamp string
 }
@@ -37,7 +42,7 @@ export interface LikedLogEntry {
 
 // Props for LogForm component
 export interface LogFormProps {
-  initialData?: Partial<LogEntry>;
+  initialData?: Partial<LogEntry> & { id?: string }; // Ensure id can be part of initialData
   onSave?: (logId: string) => void; // Callback after successful save
   isDeveloper?: boolean; // To enable developer-specific features like image upload
 }

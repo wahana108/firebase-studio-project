@@ -1,40 +1,23 @@
-rules_version = '2';
 
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Logs Collection
     match /logs/{logId} {
-      // Anyone can read a log if it's public
-      // Authenticated users can read their own private logs
-      allow read: if resource.data.isPublic == true || 
-                     (request.auth != null && resource.data.ownerId == request.auth.uid);
-
-      // User must be logged in to create a log
-      // Ensure ownerId matches the authenticated user's UID
-      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
-      
-      // Only the owner can update or delete their log
+      allow read: if resource.data.isPublic == true || (request.auth != null && resource.data.ownerId == request.auth.uid);
+      allow create: if request.auth != null; // User must be logged in to create
       allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
-
-      // Comments Subcollection
-      match /comments/{commentId} {
-        // Anyone can read comments on any log they can read (implicitly via parent log's read rule)
-        allow read: if true; 
-        
-        // Authenticated users can create comments
-        // Ensure userId in comment matches authenticated user's UID
-        allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-        
-        // Optional: Allow comment owner to update/delete
-        // allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
-      }
     }
-
-    // User-specific Liked Logs Collection
-    match /users/{userId}/likedLogs/{likedLogDocId} { // Note: likedLogDocId is typically the logId itself for simplicity in querying
-      // User can only read and write to their own likedLogs subcollection
-      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+    match /logs/{logId}/comments/{commentId} {
+      allow read: if true; // Comments can be read by anyone if the log is readable
+      allow create: if request.auth != null; // Only authenticated users can create comments
+      // allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid; // Future: allow owner to edit/delete
+    }
+    match /users/{userId}/likedLogs/{logId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Allow test writes if needed for debugging server actions or specific scenarios
+    match /test_collection/{testId} {
+       allow read, write: if true; // Be very careful with open rules like this in production
     }
   }
 }

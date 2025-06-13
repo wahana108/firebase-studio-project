@@ -1,11 +1,17 @@
+
 // src/components/LogItem.tsx
+"use client";
 import type { LogEntry } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Globe, Lock, MessageCircle, Heart, Edit } from 'lucide-react'; // Placeholder icons for now
+import { Globe, Lock, MessageSquare, Heart, Edit, ExternalLink, YoutubeIcon, ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import CommentForm from './CommentForm';
+import CommentList from './CommentList';
+import { useState } from 'react';
 
 interface LogItemProps {
   log: LogEntry;
@@ -30,40 +36,60 @@ function getYouTubeEmbedUrl(url: string): string | null {
   }
 }
 
-
 export default function LogItem({ log, showControls = false }: LogItemProps) {
   const { currentUser } = useAuth();
   const isOwner = currentUser && currentUser.uid === log.ownerId;
   const youtubeEmbedUrl = log.youtubeLink ? getYouTubeEmbedUrl(log.youtubeLink) : null;
+  const [commentRefreshKey, setCommentRefreshKey] = useState(0);
+
+  const handleCommentAdded = () => {
+    setCommentRefreshKey(prev => prev + 1);
+    // Optionally, update comment count if denormalized
+    // setLogData(prev => ({ ...prev, commentCount: (prev.commentCount || 0) + 1 }));
+  };
 
   return (
     <Card className="w-full overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardHeader className="pb-3">
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-start gap-2">
           <CardTitle className="text-xl md:text-2xl font-semibold">{log.title}</CardTitle>
-          {log.isPublic ? (
-            <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
-              <Globe size={14} /> Public
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="flex items-center gap-1 text-orange-600 border-orange-600">
-              <Lock size={14} /> Private
-            </Badge>
-          )}
+          <div className="flex-shrink-0">
+            {log.isPublic ? (
+              <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
+                <Globe size={14} /> Public
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="flex items-center gap-1 text-orange-600 border-orange-600">
+                <Lock size={14} /> Private
+              </Badge>
+            )}
+          </div>
         </div>
         <CardDescription className="text-xs text-muted-foreground pt-1">
-          By: {log.ownerId.substring(0, 8)}... | Updated: {new Date(log.updatedAt).toLocaleDateString()}
+          By: User {log.ownerId.substring(0, 6)}... | Updated: {new Date(log.updatedAt).toLocaleDateString()}
         </CardDescription>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+            {log.imageLink && <ImageIcon size={14} className="text-blue-500" />}
+            {log.youtubeLink && <YoutubeIcon size={16} className="text-red-500" />}
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         {log.imageLink && (
-          <div className="mb-4 aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center">
+          <div className="mb-4 aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center border">
             <img 
               src={log.imageLink} 
               alt={log.title} 
               className="w-full h-full object-contain" 
-              onError={(e) => e.currentTarget.style.display='none'} // Hide if image fails to load
+              onError={(e) => {
+                const target = e.currentTarget as HTMLImageElement;
+                target.onerror = null; // Prevent infinite loop if placeholder also fails
+                target.style.display='none'; 
+                const errorText = target.parentElement?.querySelector('.image-error-text') as HTMLElement;
+                if(errorText) errorText.style.display = 'block';
+              }}
+              data-ai-hint="log image"
             />
+            <p className="image-error-text text-xs text-destructive hidden">Image failed to load.</p>
           </div>
         )}
         {youtubeEmbedUrl && (
@@ -77,31 +103,49 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               referrerPolicy="strict-origin-when-cross-origin"
               allowFullScreen
-              className="rounded-md"
+              className="rounded-md border"
             ></iframe>
           </div>
         )}
-        <p className="text-muted-foreground whitespace-pre-wrap line-clamp-5 hover:line-clamp-none transition-all duration-300 ease-in-out">
+        <p className="text-muted-foreground whitespace-pre-wrap">
           {log.description}
         </p>
       </CardContent>
-      <CardFooter className="flex justify-between items-center pt-4 border-t">
-        <div className="flex gap-4 text-muted-foreground">
-          {/* Placeholder for future like/comment counts */}
-          <span className="flex items-center gap-1 text-sm hover:text-primary cursor-pointer">
-            <Heart size={16} /> 0
-          </span>
-          <span className="flex items-center gap-1 text-sm hover:text-primary cursor-pointer">
-            <MessageCircle size={16} /> 0
-          </span>
+      
+      <Separator className="my-0" />
+      
+      <div className="px-6 py-4 space-y-4">
+        <h4 className="text-md font-semibold">Comments ({log.commentCount || 0})</h4>
+        <CommentForm logId={log.id!} onCommentAdded={handleCommentAdded} />
+        <CommentList logId={log.id!} refreshKey={commentRefreshKey} />
+      </div>
+
+      <Separator className="my-0" />
+
+      <CardFooter className="flex flex-wrap justify-between items-center pt-4 border-t">
+        <div className="flex gap-3 text-muted-foreground items-center">
+          <Button variant="ghost" size="sm" className="p-1 h-auto">
+            <Heart size={16} className="mr-1" /> 0
+          </Button>
+          <Button variant="ghost" size="sm" className="p-1 h-auto">
+            <MessageSquare size={16} className="mr-1" /> {log.commentCount || 0}
+          </Button>
         </div>
-        {showControls && isOwner && (
-          <Link href={`/edit-log/${log.id}`}> {/* Placeholder for edit page */}
-            <Button variant="outline" size="sm">
-              <Edit size={16} className="mr-2" /> Edit
-            </Button>
-          </Link>
-        )}
+        <div className="flex gap-2 mt-2 sm:mt-0">
+          {showControls && isOwner && (
+            <Link href={`/logs/${log.id}/edit`}>
+              <Button variant="outline" size="sm">
+                <Edit size={16} className="mr-1 sm:mr-2" /> Edit
+              </Button>
+            </Link>
+          )}
+          {/* Optional: Add a direct link to view log if this item is part of a list */}
+           <Link href={`/logs/${log.id}`}>
+              <Button variant="outline" size="sm">
+                <ExternalLink size={16} className="mr-1 sm:mr-2" /> View
+              </Button>
+            </Link>
+        </div>
       </CardFooter>
     </Card>
   );
