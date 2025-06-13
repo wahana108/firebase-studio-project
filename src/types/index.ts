@@ -19,6 +19,7 @@ export interface LogEntry {
   createdAt: string; // ISO8601 timestamp string
   updatedAt: string; // ISO8601 timestamp string
   commentCount?: number; // Optional: for denormalized comment count
+  // likeCount will not be denormalized for Phase 6 simplicity
 }
 
 export const commentCategories = ['politics', 'social', 'economy', 'technology', 'other'] as const;
