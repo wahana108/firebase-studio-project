@@ -1,10 +1,11 @@
+
 // src/components/ClientNav.tsx
 "use client";
 
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { LogIn, LogOut, UserCircle, LayoutDashboard, Globe } from 'lucide-react'; // Added Globe
+import { LogIn, LogOut, UserCircle, LayoutDashboard, Globe, Search as SearchIconLucide } from 'lucide-react'; // Added SearchIconLucide
 
 export default function ClientNav() {
   const { currentUser, signInWithGoogle, signOut, loading } = useAuth();
@@ -44,33 +45,43 @@ export default function ClientNav() {
         <Link href="/" className="text-xl font-bold text-primary hover:text-primary/80 transition-colors">
           MindMapper Lite
         </Link>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1 sm:gap-2">
+          {currentUser && (
+            <Link href="/">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary px-2">
+                <LayoutDashboard size={18} className="mr-0 sm:mr-1" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Button>
+            </Link>
+          )}
           <Link href="/public">
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-              <Globe size={18} className="mr-1 sm:mr-2" />
-              Public Logs
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary px-2">
+              <Globe size={18} className="mr-0 sm:mr-1" />
+              <span className="hidden sm:inline">Public</span>
             </Button>
           </Link>
+          {currentUser && (
+            <Link href="/search">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary px-2">
+                <SearchIconLucide size={18} className="mr-0 sm:mr-1" />
+                <span className="hidden sm:inline">My Search</span>
+              </Button>
+            </Link>
+          )}
           {currentUser ? (
             <>
-              <Link href="/">
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-                  <LayoutDashboard size={18} className="mr-1 sm:mr-2" />
-                  Dashboard
-                </Button>
-              </Link>
-              <span className="text-sm text-muted-foreground hidden sm:inline">
+              <span className="text-sm text-muted-foreground hidden md:inline ml-2">
                 Hi, {currentUser.displayName?.split(' ')[0] || 'User'}!
               </span>
-              <Button onClick={handleSignOut} variant="outline" size="sm">
-                <LogOut size={18} className="mr-1 sm:mr-2" />
-                Sign Out
+              <Button onClick={handleSignOut} variant="outline" size="sm" className="px-2">
+                <LogOut size={18} className="mr-0 sm:mr-1" />
+                <span className="hidden sm:inline">Sign Out</span>
               </Button>
             </>
           ) : (
-            <Button onClick={handleSignIn} variant="default" size="sm">
-              <LogIn size={18} className="mr-1 sm:mr-2" />
-              Sign In with Google
+            <Button onClick={handleSignIn} variant="default" size="sm" className="px-2">
+              <LogIn size={18} className="mr-0 sm:mr-1" />
+              <span className="hidden sm:inline">Sign In</span>
             </Button>
           )}
         </div>

@@ -107,7 +107,7 @@ export default function SearchPage() {
     const lowerCaseQuery = searchQuery.toLowerCase();
     return combinedLogs.filter(log =>
       log.title.toLowerCase().includes(lowerCaseQuery) ||
-      log.description.toLowerCase().includes(lowerCaseQuery)
+      (log.description && log.description.toLowerCase().includes(lowerCaseQuery))
     );
   }, [combinedLogs, searchQuery]);
 

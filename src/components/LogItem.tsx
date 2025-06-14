@@ -45,7 +45,6 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
   const [commentRefreshKey, setCommentRefreshKey] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
-  // likeCount is not displayed directly for Phase 6 simplicity
   const [localCommentCount, setLocalCommentCount] = useState(log.commentCount || 0);
 
   useEffect(() => {
@@ -66,7 +65,6 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
 
   const handleCommentAdded = useCallback(() => {
     setCommentRefreshKey(prev => prev + 1);
-    // Optimistic update removed as onSnapshot for comment count is now primary
   }, []);
 
   useEffect(() => {
@@ -97,7 +95,6 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
           logTitle: log.title // Storing title might be useful for listing liked logs later
         });
       }
-      // isLiked state will be updated by the onSnapshot listener
     } catch (error) {
       console.error("Error liking/unliking log:", error);
     } finally {
@@ -182,8 +179,7 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
       <CardFooter className="flex flex-wrap justify-between items-center pt-4 border-t">
         <div className="flex gap-3 text-muted-foreground items-center">
           <Button variant="ghost" size="sm" className="p-1 h-auto" onClick={handleLike} disabled={isLiking || !currentUser}>
-            <Heart size={16} className={`mr-1 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} /> 
-            {/* Like count number removed for Phase 6 simplicity */}
+            <Heart size={16} className={`mr-1 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
           </Button>
           <div className="flex items-center gap-1 p-1 h-auto text-sm">
             <MessageSquare size={16} className="mr-1" /> {localCommentCount}
