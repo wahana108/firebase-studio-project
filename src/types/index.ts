@@ -37,8 +37,9 @@ export interface CommentEntry {
 
 export interface LikedLogEntry {
   logId: string; // ID of the liked log
-  userId: string; // UID of the user who liked the log
   createdAt: string; // ISO8601 timestamp string
+  // userId is implicit in the path users/{userId}/likedLogs/{logId}
+  // logTitle?: string; // Optional: if you want to store title for quick display of liked logs list
 }
 
 // Props for LogForm component
