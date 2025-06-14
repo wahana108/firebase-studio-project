@@ -13,7 +13,7 @@ import CommentForm from './CommentForm';
 import CommentList from './CommentList';
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
 
 interface LogItemProps {
   log: LogEntry;
@@ -45,92 +45,30 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
   const [commentRefreshKey, setCommentRefreshKey] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
-  const [likeCount, setLikeCount] = useState(0); // Placeholder for Phase 6 simplified like count
+  // likeCount is not displayed directly for Phase 6 simplicity
   const [localCommentCount, setLocalCommentCount] = useState(log.commentCount || 0);
 
   useEffect(() => {
     setLocalCommentCount(log.commentCount || 0);
   }, [log.commentCount]);
 
-  // Fetch initial like state for the current user and total like count
   useEffect(() => {
-    if (!log.id) return;
-
-    // Check if current user liked this log
-    if (currentUser && log.id) {
-      const likedDocRef = doc(db, 'users', currentUser.uid, 'likedLogs', log.id);
-      getDoc(likedDocRef).then((docSnap) => {
-        setIsLiked(docSnap.exists());
-      });
-    } else {
-      setIsLiked(false); // Reset if user logs out or logId is not present
+    if (!log.id || !currentUser) {
+      setIsLiked(false);
+      return;
     }
-    
-    // Fetch total like count (simplified for Phase 6 - by counting documents in a subcollection)
-    // This is a simplified approach. For large scale, denormalization or Cloud Functions are better.
-    // For Phase 6, we'll keep the "users/{userId}/likedLogs" structure as primary for user's liked logs.
-    // Displaying an accurate total like count directly on LogItem is complex with that structure
-    // without iterating through all users or denormalizing.
-    // So, we'll use a placeholder for likeCount or a simplified method if feasible.
-    // Let's try to count from a potential 'likes' subcollection on the log itself for display.
-    // If 'logs/{logId}/likes' subcollection exists and contains docs, count them.
-    // This is a *deviation* from the planned `users/{userId}/likedLogs` for *counting* purposes if you want a displayed count.
-    // The primary like *action* will still use `users/{userId}/likedLogs`.
-    // For now, let's just keep it as a placeholder '0' or implement the user-specific like icon state.
-    // To keep it simple and adhere to the plan, we will not implement a live total like count here.
-    // The `likeCount` state can be used if you decide to denormalize later.
-    // For now, we'll set it to a placeholder or leave it as 0.
-    // Let's simulate a count based on the `users/{userId}/likedLogs` structure for now
-    // by querying all users who liked THIS specific log.
-    // This is NOT efficient for many users/logs but demonstrates the idea for small scale.
-    const likesQuery = query(collection(db, 'users'), where(`likedLogs.${log.id}.logId`, '==', log.id));
-    // This query won't work as Firestore doesn't support querying map fields like this efficiently.
-    // A better approach for counting is a subcollection on the log like `logs/{logId}/likers/{userId}`
-    // or denormalization.
-
-    // Given Phase 6 simplification, we will *not* fetch total like count.
-    // `likeCount` will remain a placeholder 0. The visual feedback will be the filled/unfilled heart.
-    setLikeCount(0); // Placeholder
-
+    const likedDocRef = doc(db, 'users', currentUser.uid, 'likedLogs', log.id);
+    const unsubscribe = onSnapshot(likedDocRef, (docSnap) => {
+      setIsLiked(docSnap.exists());
+    });
+    return () => unsubscribe();
   }, [currentUser, log.id]);
 
   const handleCommentAdded = useCallback(() => {
     setCommentRefreshKey(prev => prev + 1);
-    setLocalCommentCount(prev => prev + 1); // Optimistically update comment count
+    // Optimistic update removed as onSnapshot for comment count is now primary
   }, []);
 
-  const handleLike = async () => {
-    if (!currentUser || !log.id) {
-      // Optionally, prompt to login
-      return;
-    }
-    setIsLiking(true);
-    const likedDocRef = doc(db, 'users', currentUser.uid, 'likedLogs', log.id);
-
-    try {
-      if (isLiked) {
-        await deleteDoc(likedDocRef);
-        setIsLiked(false);
-        // setLikeCount(prev => Math.max(0, prev -1)); // If we were updating a real count
-      } else {
-        await setDoc(likedDocRef, {
-          logId: log.id,
-          createdAt: new Date().toISOString(),
-          // Storing title might be useful for listing liked logs later
-          logTitle: log.title 
-        });
-        setIsLiked(true);
-        // setLikeCount(prev => prev + 1); // If we were updating a real count
-      }
-    } catch (error) {
-      console.error("Error liking/unliking log:", error);
-      // Handle error (e.g., show a toast)
-    } finally {
-      setIsLiking(false);
-    }
-  };
-  
-  // Real-time comment count update
   useEffect(() => {
     if (!log.id) return;
     const commentsCol = collection(db, 'logs', log.id, 'comments');
@@ -142,6 +80,30 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
     return () => unsubscribe();
   }, [log.id]);
 
+  const handleLike = async () => {
+    if (!currentUser || !log.id) {
+      return;
+    }
+    setIsLiking(true);
+    const likedDocRef = doc(db, 'users', currentUser.uid, 'likedLogs', log.id);
+
+    try {
+      if (isLiked) {
+        await deleteDoc(likedDocRef);
+      } else {
+        await setDoc(likedDocRef, {
+          logId: log.id,
+          createdAt: new Date().toISOString(),
+          logTitle: log.title // Storing title might be useful for listing liked logs later
+        });
+      }
+      // isLiked state will be updated by the onSnapshot listener
+    } catch (error) {
+      console.error("Error liking/unliking log:", error);
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   return (
     <Card className="w-full overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -221,11 +183,11 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
         <div className="flex gap-3 text-muted-foreground items-center">
           <Button variant="ghost" size="sm" className="p-1 h-auto" onClick={handleLike} disabled={isLiking || !currentUser}>
             <Heart size={16} className={`mr-1 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} /> 
-            {likeCount} {/* Placeholder, or can be removed */}
+            {/* Like count number removed for Phase 6 simplicity */}
           </Button>
-          <Button variant="ghost" size="sm" className="p-1 h-auto" disabled> {/* Comment button is part of form now */}
+          <div className="flex items-center gap-1 p-1 h-auto text-sm">
             <MessageSquare size={16} className="mr-1" /> {localCommentCount}
-          </Button>
+          </div>
         </div>
         <div className="flex gap-2 mt-2 sm:mt-0">
           {showControls && isOwner && (
