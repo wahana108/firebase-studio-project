@@ -3,11 +3,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useForm, SubmitHandler, Controller } from 'react-hook-form'; // Import Controller
+import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, query, where, getDocs, orderBy, Timestamp as FirestoreTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
 import type { LogEntry, LogFormProps } from '@/types';
@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const logFormSchema = z.object({
   title: z.string().min(1, 'Title is required').max(150),
@@ -31,17 +32,25 @@ const logFormSchema = z.object({
     .optional(),
   isPublic: z.boolean().default(false),
   developerImageFile: z.custom<FileList | null>(val => val === null || val instanceof FileList).optional(),
+  relatedLogIds: z.array(z.string()).optional().default([]),
 });
 
 type LogFormValues = z.infer<typeof logFormSchema>;
 
 const DEVELOPER_UID = 'REPLACE_WITH_YOUR_ACTUAL_GOOGLE_UID';
 
+interface SelectableLog {
+  id: string;
+  title: string;
+}
+
 export default function LogForm({ initialData, onSave }: LogFormProps) {
   const { currentUser } = useAuth();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableLogs, setAvailableLogs] = useState<SelectableLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   
   const isDeveloper = currentUser?.uid === DEVELOPER_UID;
 
@@ -50,7 +59,8 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     handleSubmit,
     reset,
     setValue,
-    control, // Destructure control
+    control,
+    watch,
     formState: { errors },
   } = useForm<LogFormValues>({
     resolver: zodResolver(logFormSchema),
@@ -61,8 +71,11 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       youtubeLink: initialData?.youtubeLink || '',
       isPublic: initialData?.isPublic || false,
       developerImageFile: null,
+      relatedLogIds: initialData?.relatedLogIds || [],
     },
   });
+
+  const watchedRelatedLogIds = watch('relatedLogIds', initialData?.relatedLogIds || []);
 
   useEffect(() => {
     if (initialData) {
@@ -71,10 +84,40 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       setValue('imageLink', initialData.imageLink || '');
       setValue('youtubeLink', initialData.youtubeLink || '');
       setValue('isPublic', initialData.isPublic || false);
-      // Note: developerImageFile is not typically part of initialData for editing,
-      // as it's for new uploads.
+      setValue('relatedLogIds', initialData.relatedLogIds || []);
     }
   }, [initialData, setValue]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const fetchUserLogs = async () => {
+        setIsLoadingLogs(true);
+        try {
+          const logsCollection = collection(db, 'logs');
+          const q = query(
+            logsCollection,
+            where('ownerId', '==', currentUser.uid),
+            orderBy('title', 'asc')
+          );
+          const querySnapshot = await getDocs(q);
+          const logsData = querySnapshot.docs
+            .map(docSnap => ({
+              id: docSnap.id,
+              title: docSnap.data().title,
+            }))
+            .filter(log => log.id !== initialData?.id); // Exclude current log if editing
+          setAvailableLogs(logsData as SelectableLog[]);
+        } catch (fetchError) {
+          console.error("Error fetching user logs for linking:", fetchError);
+          setError("Could not load logs for linking.");
+        } finally {
+          setIsLoadingLogs(false);
+        }
+      };
+      fetchUserLogs();
+    }
+  }, [currentUser, initialData?.id]);
+
 
   const onSubmit: SubmitHandler<LogFormValues> = async (data) => {
     if (!currentUser) {
@@ -101,13 +144,14 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       }
     }
 
-    const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'> = {
+    const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt' | 'commentCount' | 'relatedLogTitles'> = {
       title: data.title,
       description: data.description,
       imageLink: finalImageLink,
       youtubeLink: data.youtubeLink || null,
-      isPublic: data.isPublic, // This value should now be correct
+      isPublic: data.isPublic,
       ownerId: currentUser.uid,
+      relatedLogIds: data.relatedLogIds || [],
     };
 
     try {
@@ -141,6 +185,15 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       setIsSubmitting(false);
     }
   };
+  
+  const handleRelatedLogChange = (logId: string, checked: boolean) => {
+    const currentRelatedLogIds = watchedRelatedLogIds || [];
+    const newRelatedLogIds = checked
+      ? [...currentRelatedLogIds, logId]
+      : currentRelatedLogIds.filter((id) => id !== logId);
+    setValue('relatedLogIds', newRelatedLogIds, { shouldValidate: true });
+  };
+
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 p-4 md:p-6 bg-card text-card-foreground rounded-lg shadow-md max-w-2xl mx-auto">
@@ -217,6 +270,35 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
         {errors.youtubeLink && <p className="text-sm text-destructive mt-1">{errors.youtubeLink.message}</p>}
       </div>
 
+      <div className="space-y-2">
+        <Label className="block text-sm font-medium">Related Logs (Optional)</Label>
+        {isLoadingLogs ? (
+          <p className="text-sm text-muted-foreground">Loading your logs...</p>
+        ) : availableLogs.length > 0 ? (
+          <ScrollArea className="h-40 w-full rounded-md border p-2">
+            <div className="space-y-1">
+              {availableLogs.map(log => (
+                <div key={log.id} className="flex items-center space-x-2 p-1 hover:bg-muted/50 rounded-sm">
+                  <Checkbox
+                    id={`related-${log.id}`}
+                    checked={(watchedRelatedLogIds || []).includes(log.id)}
+                    onCheckedChange={(checked) => handleRelatedLogChange(log.id, !!checked)}
+                    disabled={isSubmitting}
+                  />
+                  <Label htmlFor={`related-${log.id}`} className="text-sm font-normal cursor-pointer flex-grow">
+                    {log.title}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        ) : (
+          <p className="text-sm text-muted-foreground">You have no other logs to link to, or they are still loading.</p>
+        )}
+        {errors.relatedLogIds && <p className="text-sm text-destructive mt-1">{errors.relatedLogIds.message}</p>}
+      </div>
+
+
       <div className="flex items-center space-x-2">
         <Controller
           name="isPublic"
@@ -225,7 +307,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
             <Checkbox
               id="isPublic"
               checked={field.value}
-              onCheckedChange={field.onChange} // This handles boolean conversion correctly
+              onCheckedChange={field.onChange}
               disabled={isSubmitting}
             />
           )}

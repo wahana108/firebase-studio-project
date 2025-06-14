@@ -19,7 +19,8 @@ export interface LogEntry {
   createdAt: string; // ISO8601 timestamp string
   updatedAt: string; // ISO8601 timestamp string
   commentCount?: number; // Optional: for denormalized comment count
-  // likeCount will not be denormalized for Phase 6 simplicity
+  relatedLogIds?: string[]; // Array of IDs of related logs
+  relatedLogTitles?: string[]; // Array of titles of related logs (for display convenience)
 }
 
 export const commentCategories = ['politics', 'social', 'economy', 'technology', 'other'] as const;
@@ -38,8 +39,8 @@ export interface CommentEntry {
 export interface LikedLogEntry {
   logId: string; // ID of the liked log
   createdAt: string; // ISO8601 timestamp string
+  logTitle?: string; // Optional: if you want to store title for quick display
   // userId is implicit in the path users/{userId}/likedLogs/{logId}
-  // logTitle?: string; // Optional: if you want to store title for quick display of liked logs list
 }
 
 // Props for LogForm component

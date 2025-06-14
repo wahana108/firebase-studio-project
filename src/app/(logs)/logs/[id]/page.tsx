@@ -1,16 +1,14 @@
+
 // src/app/(logs)/logs/[id]/page.tsx
 import { db } from "@/lib/firebase";
 import { collection, getDocs, doc, getDoc, Timestamp as FirestoreTimestamp } from "firebase/firestore";
 import type { LogEntry } from "@/types";
-import LogItem from "@/components/LogItem"; // Import LogItem
+import LogItem from "@/components/LogItem"; 
 import { notFound } from "next/navigation";
 
-// generateStaticParams remains important for static export if you want to pre-render known log pages
 export async function generateStaticParams() {
   try {
     const logsCollection = collection(db, "logs");
-    // Optimization: Only fetch IDs of public logs if this page is meant for public access too
-    // For now, fetches all, assuming access control is handled by LogItem or page logic
     const querySnapshot = await getDocs(logsCollection);
     const logIds = querySnapshot.docs.map((docSnap) => ({
       id: docSnap.id,
@@ -31,12 +29,34 @@ async function getLog(id: string): Promise<LogEntry | null> {
       return null;
     }
     const data = logSnap.data();
-    // Convert Timestamps to ISO strings
+    
+    const relatedLogTitles: string[] = [];
+    if (data.relatedLogIds && Array.isArray(data.relatedLogIds) && data.relatedLogIds.length > 0) {
+      for (const relatedId of data.relatedLogIds) {
+        if (typeof relatedId === 'string' && relatedId.trim() !== '') {
+          try {
+            const relatedLogRef = doc(db, "logs", relatedId);
+            const relatedLogSnap = await getDoc(relatedLogRef);
+            if (relatedLogSnap.exists()) {
+              relatedLogTitles.push(relatedLogSnap.data()?.title || "Untitled Related Log");
+            } else {
+              relatedLogTitles.push("Deleted/Unknown Log");
+            }
+          } catch (e) {
+            console.error(`Error fetching title for related log ID ${relatedId}:`, e);
+            relatedLogTitles.push("Error fetching title");
+          }
+        }
+      }
+    }
+
     return {
       id: logSnap.id,
       ...data,
       createdAt: data.createdAt instanceof FirestoreTimestamp ? data.createdAt.toDate().toISOString() : String(data.createdAt),
       updatedAt: data.updatedAt instanceof FirestoreTimestamp ? data.updatedAt.toDate().toISOString() : String(data.updatedAt),
+      relatedLogIds: data.relatedLogIds || [],
+      relatedLogTitles: relatedLogTitles,
     } as LogEntry;
   } catch (error) {
     console.error(`[LogDetailPage.getLog] Error fetching log data for ID ${id}:`, error);
@@ -49,21 +69,11 @@ export default async function LogDetailPage({ params }: { params: { id: string }
   const logData = await getLog(params.id);
 
   if (!logData) {
-    // Use notFound() for a proper 404 page if the log isn't found
-    // This is better than returning a custom div for SEO and Next.js conventions
     notFound(); 
   }
   
-  // Here, you could add logic to check if the user has permission to view this log,
-  // especially if it's private. For now, LogItem itself might handle some display aspects
-  // based on auth, but server-side checks are more secure for sensitive data.
-  // For Phase-6, LogItem will be sufficient as it hides edit controls for non-owners.
-
   return (
     <div className="container mx-auto p-4 md:p-8">
-      {/* Use LogItem to display the log. showControls can be false as actions like edit/delete
-          are typically from lists where ownership is clearer or from a dedicated edit page.
-          The LogItem itself handles comments and like status internally. */}
       <LogItem log={logData} showControls={true} />
     </div>
   );

@@ -1,23 +1,24 @@
+
 // src/app/create-log/page.tsx
 "use client";
 
 import LogForm from '@/components/LogForm';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, Timestamp as FirestoreTimestamp } from 'firebase/firestore';
 import type { LogEntry } from '@/types';
 
-export default function CreateOrEditLogPage() {
+function CreateOrEditLogPageContent() {
   const { currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editLogId = searchParams.get('edit');
 
   const [initialData, setInitialData] = useState<Partial<LogEntry> | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(!!editLogId); // Only load if editLogId is present
+  const [isLoadingData, setIsLoadingData] = useState(!!editLogId); 
 
   useEffect(() => {
     if (!authLoading && !currentUser) {
@@ -34,10 +35,9 @@ export default function CreateOrEditLogPage() {
           const logSnap = await getDoc(logRef);
           if (logSnap.exists()) {
             const data = logSnap.data();
-            // Ensure ownerId matches for editing
             if (data.ownerId !== currentUser.uid) {
                 console.error("User is not authorized to edit this log.");
-                router.push('/'); // Or an unauthorized page
+                router.push('/'); 
                 return;
             }
             setInitialData({
@@ -45,21 +45,21 @@ export default function CreateOrEditLogPage() {
               ...data,
               createdAt: data.createdAt instanceof FirestoreTimestamp ? data.createdAt.toDate().toISOString() : String(data.createdAt),
               updatedAt: data.updatedAt instanceof FirestoreTimestamp ? data.updatedAt.toDate().toISOString() : String(data.updatedAt),
+              relatedLogIds: data.relatedLogIds || [], // Ensure this is passed
             } as LogEntry);
           } else {
             console.error("Log not found for editing.");
-            router.push('/'); // Or a not-found page
+            router.push('/'); 
           }
         } catch (error) {
           console.error("Error fetching log data for edit:", error);
-          // Handle error, e.g., show a toast or redirect
         } finally {
           setIsLoadingData(false);
         }
       };
       fetchLogData();
     } else {
-        setIsLoadingData(false); // Not in edit mode, no data to load
+        setIsLoadingData(false); 
     }
   }, [editLogId, currentUser, router]);
 
@@ -75,7 +75,6 @@ export default function CreateOrEditLogPage() {
   }
 
   if (!currentUser) {
-    // This case should ideally be handled by the redirect, but as a fallback:
     return (
       <div className="container mx-auto p-4 text-center">
         <p>You need to be logged in.</p>
@@ -86,8 +85,6 @@ export default function CreateOrEditLogPage() {
     );
   }
 
-  // If in edit mode and initialData hasn't loaded yet (but not loading anymore), it might mean an error or log not found.
-  // Or, if not in edit mode, initialData will be null, which is fine for LogForm (create mode).
   if (editLogId && !initialData && !isLoadingData) {
     return <div className="container mx-auto p-4 text-center">Log data for editing could not be loaded.</div>;
   }
@@ -95,10 +92,18 @@ export default function CreateOrEditLogPage() {
   return (
     <div className="container mx-auto p-4 min-h-screen">
       <LogForm 
-        initialData={initialData || {}} // Pass empty object if creating new, or loaded data if editing
+        initialData={initialData || { relatedLogIds: [] }} 
         onSave={handleLogSave} 
         isDeveloper={isDeveloper} 
       />
     </div>
+  );
+}
+
+export default function CreateOrEditLogPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto p-4 text-center">Loading page...</div>}>
+      <CreateOrEditLogPageContent />
+    </Suspense>
   );
 }
