@@ -1,12 +1,13 @@
+
 // src/components/LogForm.tsx
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useForm, SubmitHandler } from 'react-hook-form';
+import { useForm, SubmitHandler, Controller } from 'react-hook-form'; // Import Controller
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
 import type { LogEntry, LogFormProps } from '@/types';
@@ -29,18 +30,19 @@ const logFormSchema = z.object({
     .or(z.literal(''))
     .optional(),
   isPublic: z.boolean().default(false),
-  developerImageFile: z.custom<FileList | null>(val => val === null || val instanceof FileList).optional(), // For developer upload
+  developerImageFile: z.custom<FileList | null>(val => val === null || val instanceof FileList).optional(),
 });
 
 type LogFormValues = z.infer<typeof logFormSchema>;
 
-const DEVELOPER_UID = 'REPLACE_WITH_YOUR_ACTUAL_GOOGLE_UID'; // Replace this!
+const DEVELOPER_UID = 'REPLACE_WITH_YOUR_ACTUAL_GOOGLE_UID';
 
 export default function LogForm({ initialData, onSave }: LogFormProps) {
   const { currentUser } = useAuth();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
   const isDeveloper = currentUser?.uid === DEVELOPER_UID;
 
   const {
@@ -48,6 +50,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     handleSubmit,
     reset,
     setValue,
+    control, // Destructure control
     formState: { errors },
   } = useForm<LogFormValues>({
     resolver: zodResolver(logFormSchema),
@@ -68,6 +71,8 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       setValue('imageLink', initialData.imageLink || '');
       setValue('youtubeLink', initialData.youtubeLink || '');
       setValue('isPublic', initialData.isPublic || false);
+      // Note: developerImageFile is not typically part of initialData for editing,
+      // as it's for new uploads.
     }
   }, [initialData, setValue]);
 
@@ -81,7 +86,6 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
 
     let finalImageLink = data.imageLink || null;
 
-    // Handle developer image upload
     if (isDeveloper && data.developerImageFile && data.developerImageFile.length > 0) {
       const file = data.developerImageFile[0];
       const storagePath = `logs/${initialData?.id || Date.now()}/images/${file.name}`;
@@ -97,19 +101,18 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       }
     }
 
-    const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt'> = {
+    const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt' | 'commentCount'> = {
       title: data.title,
       description: data.description,
       imageLink: finalImageLink,
       youtubeLink: data.youtubeLink || null,
-      isPublic: data.isPublic,
+      isPublic: data.isPublic, // This value should now be correct
       ownerId: currentUser.uid,
     };
 
     try {
       let docId = initialData?.id;
       if (initialData?.id) {
-        // Update existing log
         const logRef = doc(db, 'logs', initialData.id);
         await updateDoc(logRef, {
           ...logDataToSave,
@@ -117,7 +120,6 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
         });
         console.log('[LogForm] Log updated successfully:', initialData.id);
       } else {
-        // Create new log
         const docRef = await addDoc(collection(db, 'logs'), {
           ...logDataToSave,
           createdAt: new Date().toISOString(),
@@ -130,7 +132,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       if (onSave && docId) {
         onSave(docId);
       } else if (docId) {
-        router.push('/'); // Redirect to dashboard after creation if no specific onSave
+        router.push('/');
       }
     } catch (e) {
       console.error('Error saving log:', e);
@@ -146,7 +148,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
         {initialData?.id ? 'Edit Log' : 'Create New Log'}
       </h2>
 
-      {error && <p className="text-sm text-red-500 bg-red-100 p-3 rounded-md">{error}</p>}
+      {error && <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</p>}
 
       <div>
         <Label htmlFor="title" className="block text-sm font-medium mb-1">Title</Label>
@@ -155,8 +157,9 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
           {...register('title')}
           className="w-full"
           placeholder="Enter log title"
+          disabled={isSubmitting}
         />
-        {errors.title && <p className="text-sm text-red-500 mt-1">{errors.title.message}</p>}
+        {errors.title && <p className="text-sm text-destructive mt-1">{errors.title.message}</p>}
       </div>
 
       <div>
@@ -167,8 +170,9 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
           rows={5}
           className="w-full"
           placeholder="Enter log description"
+          disabled={isSubmitting}
         />
-        {errors.description && <p className="text-sm text-red-500 mt-1">{errors.description.message}</p>}
+        {errors.description && <p className="text-sm text-destructive mt-1">{errors.description.message}</p>}
       </div>
 
       <div>
@@ -179,8 +183,9 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
           {...register('imageLink')}
           className="w-full"
           placeholder="https://example.com/image.jpg"
+          disabled={isSubmitting}
         />
-        {errors.imageLink && <p className="text-sm text-red-500 mt-1">{errors.imageLink.message}</p>}
+        {errors.imageLink && <p className="text-sm text-destructive mt-1">{errors.imageLink.message}</p>}
       </div>
 
       {isDeveloper && (
@@ -192,9 +197,10 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
             {...register('developerImageFile')}
             accept="image/png, image/jpeg, image/gif, image/webp"
             className="w-full file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+            disabled={isSubmitting}
           />
           <p className="text-xs text-muted-foreground mt-1">If an image is uploaded here, it will override the Image Link above.</p>
-          {errors.developerImageFile && <p className="text-sm text-red-500 mt-1">{errors.developerImageFile.message}</p>}
+          {errors.developerImageFile && <p className="text-sm text-destructive mt-1">{errors.developerImageFile.message}</p>}
         </div>
       )}
 
@@ -206,17 +212,25 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
           {...register('youtubeLink')}
           className="w-full"
           placeholder="https://www.youtube.com/watch?v=your_video_id"
+          disabled={isSubmitting}
         />
-        {errors.youtubeLink && <p className="text-sm text-red-500 mt-1">{errors.youtubeLink.message}</p>}
+        {errors.youtubeLink && <p className="text-sm text-destructive mt-1">{errors.youtubeLink.message}</p>}
       </div>
 
       <div className="flex items-center space-x-2">
-        <Checkbox
-          id="isPublic"
-          {...register('isPublic')}
-          defaultChecked={initialData?.isPublic || false}
+        <Controller
+          name="isPublic"
+          control={control}
+          render={({ field }) => (
+            <Checkbox
+              id="isPublic"
+              checked={field.value}
+              onCheckedChange={field.onChange} // This handles boolean conversion correctly
+              disabled={isSubmitting}
+            />
+          )}
         />
-        <Label htmlFor="isPublic" className="text-sm font-medium">
+        <Label htmlFor="isPublic" className="text-sm font-medium cursor-pointer">
           Make this log public
         </Label>
       </div>
