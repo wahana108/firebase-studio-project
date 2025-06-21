@@ -9,7 +9,7 @@ import type { CommentEntry } from '@/types';
 
 interface CommentListProps {
   logId: string;
-  refreshKey: number; // To manually trigger re-fetch if onSnapshot isn't enough or used with it
+  refreshKey: number; 
 }
 
 export default function CommentList({ logId, refreshKey }: CommentListProps) {
@@ -34,12 +34,11 @@ export default function CommentList({ logId, refreshKey }: CommentListProps) {
           return {
             id: doc.id,
             ...data,
-            // Ensure createdAt is a string, Firestore Timestamps are converted
             createdAt: data.createdAt instanceof FirestoreTimestamp 
                        ? data.createdAt.toDate().toISOString() 
                        : typeof data.createdAt === 'string' 
                        ? data.createdAt
-                       : new Date().toISOString(), // Fallback if undefined
+                       : new Date().toISOString(), 
           } as CommentEntry;
         });
         setComments(commentsData);
@@ -52,7 +51,7 @@ export default function CommentList({ logId, refreshKey }: CommentListProps) {
       }
     );
 
-    return () => unsubscribe(); // Cleanup subscription on unmount
+    return () => unsubscribe(); 
   }, [logId, refreshKey]);
 
   if (loading) {
@@ -73,7 +72,9 @@ export default function CommentList({ logId, refreshKey }: CommentListProps) {
         <div key={comment.id} className="p-3 bg-muted/50 rounded-md border">
           <div className="flex justify-between items-center mb-1">
             <p className="text-sm font-semibold">{comment.userName}</p>
-            <p className="text-xs text-muted-foreground capitalize bg-secondary px-2 py-0.5 rounded-full">{comment.category}</p>
+            {/* Removed category display: 
+            <p className="text-xs text-muted-foreground capitalize bg-secondary px-2 py-0.5 rounded-full">{comment.category}</p> 
+            */}
           </div>
           <p className="text-sm text-foreground whitespace-pre-wrap">{comment.content}</p>
           <p className="text-xs text-muted-foreground mt-1">

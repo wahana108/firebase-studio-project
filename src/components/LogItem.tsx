@@ -13,11 +13,12 @@ import CommentForm from './CommentForm';
 import CommentList from './CommentList';
 import { useState, useEffect, useCallback } from 'react';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, Timestamp as FirestoreTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
 
 interface LogItemProps {
   log: LogEntry;
-  showControls?: boolean; 
+  showControls?: boolean;
+  isDetailPage?: boolean; // New prop to indicate if this is the full detail page
 }
 
 function getYouTubeEmbedUrl(url: string): string | null {
@@ -38,7 +39,7 @@ function getYouTubeEmbedUrl(url: string): string | null {
   }
 }
 
-export default function LogItem({ log, showControls = false }: LogItemProps) {
+export default function LogItem({ log, showControls = false, isDetailPage = false }: LogItemProps) {
   const { currentUser } = useAuth();
   const isOwner = currentUser && currentUser.uid === log.ownerId;
   const youtubeEmbedUrl = log.youtubeLink ? getYouTubeEmbedUrl(log.youtubeLink) : null;
@@ -50,10 +51,8 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
 
 
   useEffect(() => {
-     // If log data changes from props, update internal state
-     // This is important if the log object itself is updated from parent (e.g. after an edit)
      setCurrentLogData(log);
-     setLocalCommentCount(log.commentCount || 0); // Also update comment count from prop if it exists
+     setLocalCommentCount(log.commentCount || 0); 
   }, [log]);
 
 
@@ -71,8 +70,6 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
 
   const handleCommentAdded = useCallback(() => {
     setCommentRefreshKey(prev => prev + 1);
-    // Optionally, re-fetch log data here if commentCount isn't updated by onSnapshot
-    // or if other log details might change due to commenting.
   }, []);
 
   useEffect(() => {
@@ -103,7 +100,6 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
           logTitle: currentLogData.title 
         });
       }
-      // Firestore onSnapshot will update isLiked state
     } catch (error) {
       console.error("Error liking/unliking log:", error);
     } finally {
@@ -170,7 +166,7 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
             ></iframe>
           </div>
         )}
-        <p className="text-muted-foreground whitespace-pre-wrap">
+        <p className={`text-muted-foreground whitespace-pre-wrap ${!isDetailPage ? 'line-clamp-3' : ''}`}>
           {currentLogData.description}
         </p>
 
@@ -184,7 +180,7 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
               {currentLogData.relatedLogIds.map((relatedId, index) => (
                 <Link key={relatedId} href={`/logs/${relatedId}`} legacyBehavior>
                   <a className="text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded-md hover:bg-secondary/80 transition-colors">
-                    {currentLogData.relatedLogTitles?.[index] || `Log...`}
+                    {currentLogData.relatedLogTitles?.[index] || `Log ID: ${relatedId.substring(0,6)}...`}
                   </a>
                 </Link>
               ))}
@@ -193,13 +189,16 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
         )}
       </CardContent>
       
-      <Separator className="my-0" />
-      
-      <div className="px-6 py-4 space-y-4">
-        <h4 className="text-md font-semibold">Comments ({localCommentCount})</h4>
-        <CommentForm logId={currentLogData.id!} onCommentAdded={handleCommentAdded} />
-        <CommentList logId={currentLogData.id!} refreshKey={commentRefreshKey} />
-      </div>
+      {isDetailPage && (
+        <>
+          <Separator className="my-0" />
+          <div className="px-6 py-4 space-y-4">
+            <h4 className="text-md font-semibold">Comments ({localCommentCount})</h4>
+            <CommentForm logId={currentLogData.id!} onCommentAdded={handleCommentAdded} />
+            <CommentList logId={currentLogData.id!} refreshKey={commentRefreshKey} />
+          </div>
+        </>
+      )}
 
       <Separator className="my-0" />
 
@@ -207,6 +206,7 @@ export default function LogItem({ log, showControls = false }: LogItemProps) {
         <div className="flex gap-3 text-muted-foreground items-center">
           <Button variant="ghost" size="sm" className="p-1 h-auto" onClick={handleLike} disabled={isLiking || !currentUser}>
             <Heart size={16} className={`mr-1 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+            {/* Removed like count display: {localLikeCount} */}
           </Button>
           <div className="flex items-center gap-1 p-1 h-auto text-sm">
             <MessageSquare size={16} className="mr-1" /> {localCommentCount}

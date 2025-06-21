@@ -23,15 +23,14 @@ export interface LogEntry {
   relatedLogTitles?: string[]; // Array of titles of related logs (for display convenience)
 }
 
-export const commentCategories = ['politics', 'social', 'economy', 'technology', 'other'] as const;
-export type CommentCategory = typeof commentCategories[number];
+// Removed commentCategories and CommentCategory type
 
 export interface CommentEntry {
   id?: string; // Firestore document ID
   logId: string; // ID of the log this comment belongs to
   userId: string; // UID of the user who wrote the comment
   userName: string; // Display name of the user
-  category: CommentCategory;
+  // category: CommentCategory; // Removed category
   content: string;
   createdAt: string; // ISO8601 timestamp string
 }
