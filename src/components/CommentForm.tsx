@@ -1,24 +1,26 @@
+
 // src/components/CommentForm.tsx
 "use client";
 
 import React, { useState } from 'react';
-import { useForm, SubmitHandler, Controller } from 'react-hook-form';
+import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { commentCategories, type CommentCategory } from '@/types';
+// Removed Select imports as category is removed
+
+// Removed commentCategories import
 
 const commentFormSchema = z.object({
   content: z.string().min(1, 'Comment cannot be empty.').max(1000, 'Comment too long.'),
-  category: z.enum(commentCategories, {
-    errorMap: () => ({ message: "Please select a category." }),
-  }),
+  // category: z.enum(commentCategories, { // Removed category validation
+  //   errorMap: () => ({ message: "Please select a category." }),
+  // }),
 });
 
 type CommentFormValues = z.infer<typeof commentFormSchema>;
@@ -37,13 +39,13 @@ export default function CommentForm({ logId, onCommentAdded }: CommentFormProps)
     register,
     handleSubmit,
     reset,
-    control,
+    // control, // Removed control as category is removed
     formState: { errors },
   } = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
     defaultValues: {
       content: '',
-      category: 'other',
+      // category: 'other', // Removed category default
     },
   });
 
@@ -61,12 +63,12 @@ export default function CommentForm({ logId, onCommentAdded }: CommentFormProps)
         userId: currentUser.uid,
         userName: currentUser.displayName || 'Anonymous User',
         content: data.content,
-        category: data.category,
-        createdAt: new Date().toISOString(), // ISO string for consistency
+        // category: data.category, // Removed category
+        createdAt: new Date().toISOString(), 
       };
       await addDoc(collection(db, 'logs', logId, 'comments'), commentData);
       reset();
-      onCommentAdded(); // Notify parent to refresh comment list
+      onCommentAdded(); 
     } catch (e) {
       console.error('Error adding comment:', e);
       setError('Failed to add comment. Please try again.');
@@ -93,28 +95,7 @@ export default function CommentForm({ logId, onCommentAdded }: CommentFormProps)
         />
         {errors.content && <p className="text-sm text-destructive mt-1">{errors.content.message}</p>}
       </div>
-      <div>
-        <Label htmlFor="category" className="block text-sm font-medium mb-1">Category</Label>
-        <Controller
-          name="category"
-          control={control}
-          render={({ field }) => (
-            <Select onValueChange={field.onChange} defaultValue={field.value}>
-              <SelectTrigger id="category" className={errors.category ? 'border-destructive' : ''}>
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {commentCategories.map((category) => (
-                  <SelectItem key={category} value={category} className="capitalize">
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        />
-        {errors.category && <p className="text-sm text-destructive mt-1">{errors.category.message}</p>}
-      </div>
+      {/* Removed Category Select Section */}
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Submitting...' : 'Submit Comment'}
       </Button>

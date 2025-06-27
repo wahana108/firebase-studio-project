@@ -13,6 +13,27 @@ import { Input } from '@/components/ui/input';
 import { Search as SearchIcon } from 'lucide-react';
 import Link from 'next/link';
 
+async function fetchLogTitles(logIds: string[]): Promise<string[]> {
+  const titles: string[] = [];
+  for (const id of logIds) {
+    if (typeof id === 'string' && id.trim() !== '') {
+      try {
+        const logRef = doc(db, "logs", id);
+        const logSnap = await getDoc(logRef);
+        if (logSnap.exists()) {
+          titles.push(logSnap.data()?.title || "Untitled Related Log");
+        } else {
+          titles.push("Deleted/Unknown Log");
+        }
+      } catch (e) {
+        console.error(`Error fetching title for related log ID ${id}:`, e);
+        titles.push("Error fetching title");
+      }
+    }
+  }
+  return titles;
+}
+
 export default function SearchPage() {
   const { currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -41,15 +62,22 @@ export default function SearchPage() {
             orderBy('updatedAt', 'desc')
           );
           const ownLogsSnapshot = await getDocs(ownLogsQuery);
-          const fetchedUserLogs = ownLogsSnapshot.docs.map(docSnap => {
+          const fetchedUserLogsPromises = ownLogsSnapshot.docs.map(async (docSnap) => {
             const data = docSnap.data();
+            let relatedLogTitles: string[] = [];
+            if (data.relatedLogIds && data.relatedLogIds.length > 0) {
+              relatedLogTitles = await fetchLogTitles(data.relatedLogIds);
+            }
             return {
               id: docSnap.id,
               ...data,
               createdAt: data.createdAt instanceof FirestoreTimestamp ? data.createdAt.toDate().toISOString() : String(data.createdAt),
               updatedAt: data.updatedAt instanceof FirestoreTimestamp ? data.updatedAt.toDate().toISOString() : String(data.updatedAt),
+              relatedLogIds: data.relatedLogIds || [],
+              relatedLogTitles,
             } as LogEntry;
           });
+          const fetchedUserLogs = await Promise.all(fetchedUserLogsPromises);
           setUserLogs(fetchedUserLogs);
 
           // Fetch liked logs
@@ -63,11 +91,17 @@ export default function SearchPage() {
             const logDocSnap = await getDoc(logDocRef);
             if (logDocSnap.exists()) {
               const data = logDocSnap.data();
+              let relatedLogTitles: string[] = [];
+              if (data.relatedLogIds && data.relatedLogIds.length > 0) {
+                relatedLogTitles = await fetchLogTitles(data.relatedLogIds);
+              }
               return {
                 id: logDocSnap.id,
                 ...data,
                 createdAt: data.createdAt instanceof FirestoreTimestamp ? data.createdAt.toDate().toISOString() : String(data.createdAt),
                 updatedAt: data.updatedAt instanceof FirestoreTimestamp ? data.updatedAt.toDate().toISOString() : String(data.updatedAt),
+                relatedLogIds: data.relatedLogIds || [],
+                relatedLogTitles,
               } as LogEntry;
             }
             return null;
@@ -90,10 +124,7 @@ export default function SearchPage() {
     const allLogsMap = new Map<string, LogEntry>();
     userLogs.forEach(log => allLogsMap.set(log.id!, log));
     likedLogs.forEach(log => {
-      // Add liked log only if it's not already present (i.e., not an owned log)
-      // or if you want liked logs to always be separate, adjust logic.
-      // For now, ensure unique by ID.
-      if (log.id) { // ensure log.id is defined
+      if (log.id) { 
          allLogsMap.set(log.id, log);
       }
     });
@@ -147,6 +178,7 @@ export default function SearchPage() {
       <LogList 
         logs={filteredLogs} 
         showControls={true} 
+        isListItem={true} // Indicate these are list items for compact view
         emptyStateMessage={searchQuery ? "No logs match your search." : "You haven't created or liked any logs yet."}
       />
     </div>

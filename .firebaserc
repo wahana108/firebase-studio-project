@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "mindmapper-lite"
-  }
+    "default": "mindmapperwithauth"
+  },
+  "targets": {},
+  "etags": {}
 }

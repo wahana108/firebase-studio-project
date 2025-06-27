@@ -1,24 +1,8 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /logs/{logId} {
-      allow read: if resource.data.isPublic == true || (request.auth != null && resource.data.ownerId == request.auth.uid);
-      allow create: if request.auth != null; // User must be logged in to create
-      allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
-    }
-    match /logs/{logId}/comments/{commentId} {
-      allow read: if true; // Comments are public if the log is accessible
-      allow create: if request.auth != null;
-      // allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid; // If needed
-    }
-    // Rule for user-specific liked logs
-    match /users/{userId}/likedLogs/{logId} {
-      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
-    }
-    // Allow developers to write to test_collection during development
-    match /test_collection/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == 'REPLACE_WITH_YOUR_ACTUAL_GOOGLE_UID'; // Replace with your actual UID
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }

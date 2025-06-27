@@ -1,3 +1,4 @@
+
 // src/app/page.tsx (Dashboard)
 "use client";
 
@@ -5,12 +6,33 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, Timestamp as FirestoreTimestamp } from 'firebase/firestore';
 import type { LogEntry } from '@/types';
 import LogList from '@/components/LogList';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { PlusCircle } from 'lucide-react';
+
+async function fetchLogTitles(logIds: string[]): Promise<string[]> {
+  const titles: string[] = [];
+  for (const id of logIds) {
+    if (typeof id === 'string' && id.trim() !== '') {
+      try {
+        const logRef = doc(db, "logs", id);
+        const logSnap = await getDoc(logRef);
+        if (logSnap.exists()) {
+          titles.push(logSnap.data()?.title || "Untitled Related Log");
+        } else {
+          titles.push("Deleted/Unknown Log");
+        }
+      } catch (e) {
+        console.error(`Error fetching title for related log ID ${id}:`, e);
+        titles.push("Error fetching title");
+      }
+    }
+  }
+  return titles;
+}
 
 export default function DashboardPage() {
   const { currentUser, loading } = useAuth();
@@ -36,10 +58,22 @@ export default function DashboardPage() {
             orderBy('updatedAt', 'desc')
           );
           const querySnapshot = await getDocs(q);
-          const logsData = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-          } as LogEntry));
+          const logsDataPromises = querySnapshot.docs.map(async (docSnap) => {
+            const data = docSnap.data();
+            let relatedLogTitles: string[] = [];
+            if (data.relatedLogIds && data.relatedLogIds.length > 0) {
+              relatedLogTitles = await fetchLogTitles(data.relatedLogIds);
+            }
+            return {
+              id: docSnap.id,
+              ...data,
+              createdAt: data.createdAt instanceof FirestoreTimestamp ? data.createdAt.toDate().toISOString() : String(data.createdAt),
+              updatedAt: data.updatedAt instanceof FirestoreTimestamp ? data.updatedAt.toDate().toISOString() : String(data.updatedAt),
+              relatedLogIds: data.relatedLogIds || [],
+              relatedLogTitles,
+            } as LogEntry;
+          });
+          const logsData = await Promise.all(logsDataPromises);
           setUserLogs(logsData);
         } catch (error) {
           console.error("Error fetching user's logs:", error);
@@ -56,7 +90,7 @@ export default function DashboardPage() {
   }
 
   if (!currentUser) {
-    return null; // Should be redirected by the first useEffect
+    return null; 
   }
 
   return (
@@ -73,6 +107,7 @@ export default function DashboardPage() {
       <LogList 
         logs={userLogs} 
         showControls={true} 
+        isListItem={true} // Indicate these are list items for compact view
         emptyStateMessage="You haven't created any logs yet. Get started by creating one!"
       />
     </div>
