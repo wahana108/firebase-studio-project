@@ -128,16 +128,16 @@ export default function LogItem({ log, showControls = false, isDetailPage = fals
           By: User {currentLogData.ownerId.substring(0, 6)}... | Updated: {new Date(currentLogData.updatedAt).toLocaleDateString()}
         </CardDescription>
         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-            {currentLogData.imageLink && <ImageIcon size={14} className="text-blue-500" />}
+            {currentLogData.imageUrls && currentLogData.imageUrls.length > 0 && <ImageIcon size={14} className="text-blue-500" />}
             {currentLogData.youtubeLink && <YoutubeIcon size={16} className="text-red-500" />}
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        {currentLogData.imageLink && (
+        {currentLogData.imageUrls && currentLogData.imageUrls.length > 0 && (
           <div className="mb-4 aspect-video bg-muted rounded-md overflow-hidden flex items-center justify-center border">
             <img 
-              src={currentLogData.imageLink} 
-              alt={currentLogData.title} 
+              src={currentLogData.imageUrls[0].url} 
+              alt={currentLogData.imageUrls[0].caption || currentLogData.title} 
               className="w-full h-full object-contain" 
               onError={(e) => {
                 const target = e.currentTarget as HTMLImageElement;

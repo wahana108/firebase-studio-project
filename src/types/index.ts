@@ -12,7 +12,7 @@ export interface LogEntry {
   id?: string; // Firestore document ID
   title: string;
   description: string;
-  imageLink?: string | null; // External image URL or Firebase Storage URL
+  
   youtubeLink?: string | null; // YouTube video URL
   isPublic: boolean;
   ownerId: string; // UID of the user who created the log
@@ -21,6 +21,7 @@ export interface LogEntry {
   commentCount?: number; // Optional: for denormalized comment count
   relatedLogIds?: string[]; // Array of IDs of related logs
   relatedLogTitles?: string[]; // Array of titles of related logs (for display convenience)
+  imageUrls?: ImageItem[]; // Add imageUrls to LogEntry
 }
 
 // Removed commentCategories and CommentCategory type
@@ -43,8 +44,19 @@ export interface LikedLogEntry {
 }
 
 // Props for LogForm component
+export interface ImageItem {
+  url: string;
+  isMain?: boolean;
+  caption?: string;
+}
+
 export interface LogFormProps {
   initialData?: Partial<LogEntry> & { id?: string }; // Ensure id can be part of initialData
   onSave?: (logId: string) => void; // Callback after successful save
+  onLogCreated?: () => void; // Callback after successful log creation
   isDeveloper?: boolean; // To enable developer-specific features like image upload
+  action?: (prevState: any, formData: FormData) => Promise<any>;
+  variant?: "default" | "embedded";
 }
+
+

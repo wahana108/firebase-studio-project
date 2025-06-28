@@ -1,8 +1,5 @@
 
-// src/components/PublicLogListClient.tsx
-"use client";
-
-import type { Log } from "@/types";
+import type { LogEntry, ImageItem } from "@/types";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,27 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firestoreUtils"; // Assuming db is exported from firestoreUtils or directly from firebase
-import { Timestamp } from "firebase/firestore"; // Import Timestamp
+import { db } from "@/lib/firestoreUtils";
+import { Timestamp } from "firebase/firestore";
 
-async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase_setup" | "generic" }> {
+async function getPublicLogs(): Promise<LogEntry[] | { error: string; type: "firebase_setup" | "generic" }> {
   try {
     const logsCollection = collection(db, "logs");
-    // Query for logs where isPublic is true, order by most recently updated (or created)
     const logsQuery = query(
       logsCollection,
       where("isPublic", "==", true),
-      orderBy("updatedAt", "asc") // Disesuaikan dengan permintaan indeks (ASC)
+      orderBy("updatedAt", "asc")
     );
     const querySnapshot = await getDocs(logsQuery);
 
-    const logs: Log[] = [];
+    const logs: LogEntry[] = [];
     for (const logDoc of querySnapshot.docs) {
       const data = logDoc.data();
       const relatedLogTitles: string[] = [];
 
-      if (data.relatedLogs && Array.isArray(data.relatedLogs)) {
-        for (const relatedId of data.relatedLogs) {
+      if (data.relatedLogIds && Array.isArray(data.relatedLogIds)) {
+        for (const relatedId of data.relatedLogIds) {
           if (typeof relatedId === 'string' && relatedId.trim() !== "") {
             try {
               const relatedLogRef = doc(db, "logs", relatedId);
@@ -54,23 +50,25 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
         title: data.title || "Untitled Log",
         description: data.description || "",
         imageUrls: data.imageUrls || [],
-        relatedLogs: (data.relatedLogs || []).filter((id: string) => 
-            logs.find(l => l.id === id && l.isPublic)
+        youtubeLink: data.youtubeLink || null,
+        relatedLogIds: (data.relatedLogIds || []).filter((id: string) => 
+            logs.some(l => l.id === id && l.isPublic)
         ),
         relatedLogTitles,
         isPublic: data.isPublic,
+        ownerId: data.ownerId || '',
         createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : new Date().toISOString()),
         updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : (typeof updatedAt === 'string' ? updatedAt : new Date().toISOString()),
-      } as Log);
+      });
     }
     console.log("[PublicLogListClient] Public logs fetched:", logs.length);
     return logs;
   } catch (error: any) {
     console.error("[PublicLogListClient] Error fetching public logs:", error);
     if (error.code && (error.code === 'unavailable' || error.code === 'failed-precondition' || error.code === 'unimplemented' || error.message.includes("query requires an index"))) {
-      const firestoreIndexLink = "https://console.firebase.google.com/v1/r/project/the-mother-earth-project/firestore/indexes?create_composite=ClVwcm9qZWN0cy90aGUtbW90aGVyLWVhcnRoLXByb2plY3QvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2xvZ3MvaW5kZXhlcy9fEAEaDAoIaXNQdWJsaWMQARoNCgl1cGRhdGVkQXQQAhoMCghfX25hbWVfXxAC"; // Default ke ASC untuk updatedAt
+      const firestoreIndexLink = "https://console.firebase.google.com/v1/r/project/the-mother-earth-project/firestore/indexes?create_composite=ClVwcm9qZWN0cy90aGUtbW90aGVyLWVhcnRoLXByb2plY3QvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2xvZ3MvaW5kZXhlcy9fEAEaDAoIaXNQdWJsaWMQARoNCgl1cGRhdGVkQXQQAhoMCghfX25hbWVfXxAC";
       return { 
-        error: `${error.message}. Anda mungkin perlu membuat indeks komposit di Firestore. Coba link ini: ${firestoreIndexLink} (Pastikan field 'updatedAt' diurutkan 'Ascending' jika query Anda menggunakan 'orderBy("updatedAt", "asc")')`, 
+        error: `${error.message}. You may need to create a composite index in Firestore. Try this link: ${firestoreIndexLink} (Ensure 'updatedAt' field is sorted 'Ascending' if your query uses 'orderBy("updatedAt", "asc")')`, 
         type: "firebase_setup" 
       };
     }
@@ -78,9 +76,8 @@ async function getPublicLogs(): Promise<Log[] | { error: string; type: "firebase
   }
 }
 
-
 export default function PublicLogListClient() {
-  const [logsResult, setLogsResult] = useState<Log[] | { error: string; type: "firebase_setup" | "generic" } | null>(null);
+  const [logsResult, setLogsResult] = useState<LogEntry[] | { error: string; type: "firebase_setup" | "generic" } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -118,7 +115,7 @@ export default function PublicLogListClient() {
     );
   }
 
-  const allPublicLogs = logsResult as Log[];
+  const allPublicLogs = logsResult as LogEntry[];
   const filteredLogs = searchQuery
     ? allPublicLogs.filter(
         (log) =>
@@ -152,10 +149,9 @@ export default function PublicLogListClient() {
         </p>
       )}
 
-      {/* Daftar log ditampilkan di sini, dalam satu kolom terpusat */}
       <div className="space-y-6 w-full max-w-4xl mx-auto">
         {filteredLogs.map((log) => {
-          const validImageUrls = log.imageUrls?.filter((img) => typeof img.url === "string" && img.url.trim() !== "") || [];
+          const validImageUrls = log.imageUrls?.filter((img: ImageItem) => typeof img.url === "string" && img.url.trim() !== "") || [];
           return (
             <Card key={log.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col">
               <CardHeader>
@@ -169,7 +165,7 @@ export default function PublicLogListClient() {
                 <p className="text-muted-foreground mb-4 whitespace-pre-wrap">{log.description}</p>
                 {validImageUrls.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
-                    {validImageUrls.map((img, idx) => ( 
+                    {validImageUrls.map((img: ImageItem, idx: number) => ( 
                       <Dialog key={`${log.id}-img-${idx}`}>
                         <DialogTrigger asChild>
                           <div className="relative aspect-square cursor-pointer group border rounded-md overflow-hidden">
@@ -220,7 +216,7 @@ export default function PublicLogListClient() {
                       Related Public Logs:
                     </p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {log.relatedLogTitles.slice(0,3).map((title, idx) => (
+                      {log.relatedLogTitles.slice(0,3).map((title: string, idx: number) => (
                         <span key={idx} className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full">
                           {title}
                         </span>
@@ -246,5 +242,3 @@ export default function PublicLogListClient() {
     </div>
   );
 }
-
-    

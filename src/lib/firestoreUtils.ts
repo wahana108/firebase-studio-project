@@ -1,23 +1,19 @@
 
-// c:\Users\ramaw\firebase-studio-project\src\lib\firestoreUtils.ts
 import { collection, getDocs, query, orderBy, doc, getDoc, Timestamp } from "firebase/firestore";
-import { db } from "./firebase"; // Ensure db is exported from ./firebase
-import type { Log } from "@/types";
+import { db } from "./firebase";
+import type { LogEntry } from "@/types";
 
-// Helper function to process a single log document
-async function processLogDoc(logDocSnapshot: any): Promise<Log> {
+async function processLogDoc(logDocSnapshot: any): Promise<LogEntry> {
   const logData = logDocSnapshot.data();
   const relatedLogTitles: string[] = [];
 
-  if (logData.relatedLogs && Array.isArray(logData.relatedLogs)) {
-    for (const relatedId of logData.relatedLogs) {
+  if (logData.relatedLogIds && Array.isArray(logData.relatedLogIds)) {
+    for (const relatedId of logData.relatedLogIds) {
       if (typeof relatedId === 'string' && relatedId.trim() !== "") {
         try {
           const relatedLogDocRef = doc(db, "logs", relatedId);
           const relatedLogDocSnap = await getDoc(relatedLogDocRef);
           if (relatedLogDocSnap.exists()) {
-            // If the current context is not public, we can show any related log title.
-            // If this utility is used for a public page, it might need to check if relatedLog is also public.
             relatedLogTitles.push(relatedLogDocSnap.data().title || "Log Tanpa Judul");
           } else {
             relatedLogTitles.push("Log Tidak Ditemukan");
@@ -26,10 +22,6 @@ async function processLogDoc(logDocSnapshot: any): Promise<Log> {
           console.error(`Error mengambil judul log terkait untuk ID ${relatedId}:`, e);
           relatedLogTitles.push("Gagal Mengambil Judul");
         }
-      } else if (typeof relatedId !== 'string' || relatedId.trim() === "") {
-        // Handle invalid or empty string IDs if necessary, or skip
-        // console.warn(`Invalid or empty relatedId found: '${relatedId}'`);
-        // relatedLogTitles.push("ID Tidak Valid"); // Optional: if you want to show this
       }
     }
   }
@@ -42,21 +34,19 @@ async function processLogDoc(logDocSnapshot: any): Promise<Log> {
     title: logData.title || "Tanpa Judul",
     description: logData.description || "",
     imageUrls: logData.imageUrls || [],
-    relatedLogs: logData.relatedLogs || [],
+    youtubeLink: logData.youtubeLink || null,
+    relatedLogIds: logData.relatedLogIds || [],
     relatedLogTitles: relatedLogTitles,
-    isPublic: logData.isPublic || false, // Include isPublic
+    isPublic: logData.isPublic || false,
+    ownerId: logData.ownerId || '', // Ensure ownerId is part of the return
     createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : (typeof createdAt === 'string' ? createdAt : new Date().toISOString()),
     updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : (typeof updatedAt === 'string' ? updatedAt : new Date().toISOString()),
-  } as Log;
+  };
 }
 
-
-export async function getLogs(): Promise<Log[] | { error: string; type: "firebase_setup" | "generic" }> {
+export async function getLogs(): Promise<LogEntry[] | { error: string; type: "firebase_setup" | "generic" }> {
   try {
     const logsCollection = collection(db, "logs");
-    // This fetches ALL logs. If the main page is behind Basic Auth, this is fine.
-    // If not, this should also filter by isPublic or by ownerId for authenticated users.
-    // For now, keeping it as is, assuming the page calling this is already auth-protected.
     const logsQuery = query(logsCollection, orderBy("createdAt", "desc"));
     const querySnapshot = await getDocs(logsQuery);
 
@@ -73,7 +63,7 @@ export async function getLogs(): Promise<Log[] | { error: string; type: "firebas
   }
 }
 
-export async function searchLogs(searchTerm: string): Promise<Log[] | { error: string; type: "firebase_setup" | "generic" }> {
+export async function searchLogs(searchTerm: string): Promise<LogEntry[] | { error: string; type: "firebase_setup" | "generic" }> {
   if (!searchTerm.trim()) {
     return getLogs(); 
   }
@@ -85,16 +75,14 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
     const lowerSearchTerm = searchTerm.toLowerCase();
     const allLogsProcessed = await Promise.all(querySnapshot.docs.map(logDoc => processLogDoc(logDoc)));
     
-    // Assuming searchLogs is used on a page protected by Basic Auth, so it can search all logs.
-    // If this were for a public search, it should only search public logs.
-    const matchedLogs: Log[] = [];
+    const matchedLogs: LogEntry[] = [];
     const addedLogIds = new Set<string>(); 
 
     for (const log of allLogsProcessed) {
       const titleMatch = log.title?.toLowerCase().includes(lowerSearchTerm);
       const descriptionMatch = log.description?.toLowerCase().includes(lowerSearchTerm);
 
-      if (titleMatch || descriptionMatch) {
+      if ((titleMatch || descriptionMatch) && log.id) {
         if (!addedLogIds.has(log.id)) {
           matchedLogs.push(log);
           addedLogIds.add(log.id);
@@ -102,12 +90,12 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
       }
     }
     
-    const directMatchIds = new Set<string>(matchedLogs.map(log => log.id));
+    const directMatchIds = new Set<string>(matchedLogs.map(log => log.id).filter((id): id is string => !!id));
 
     for (const log of allLogsProcessed) {
-        if (!addedLogIds.has(log.id)) {
-            const isRelatedToDirectMatch = log.relatedLogs?.some(relatedId => directMatchIds.has(relatedId));
-            const relatedTitleMatchesSearch = log.relatedLogTitles?.some(title => title.toLowerCase().includes(lowerSearchTerm));
+        if (log.id && !addedLogIds.has(log.id)) {
+            const isRelatedToDirectMatch = log.relatedLogIds?.some((relatedId: string) => directMatchIds.has(relatedId));
+            const relatedTitleMatchesSearch = log.relatedLogTitles?.some((title: string) => title.toLowerCase().includes(lowerSearchTerm));
 
             if (isRelatedToDirectMatch || relatedTitleMatchesSearch) {
                 matchedLogs.push(log);
@@ -125,5 +113,5 @@ export async function searchLogs(searchTerm: string): Promise<Log[] | { error: s
     return { error: error.message || "Terjadi kesalahan saat mencari log.", type: "generic" };
   }
 }
-// Export db if it's not already available elsewhere for PublicLogListClient
+
 export { db };

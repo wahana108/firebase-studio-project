@@ -1,8 +1,7 @@
-
 "use client";
 
-import { LogForm } from "@/components/LogForm";
-import { LogList } from "@/components/LogList";
+import LogForm from "@/components/LogForm";
+import LogList from "@/components/LogList";
 import { SearchBar } from "@/components/SearchBar";
 import { Separator } from "@/components/ui/separator";
 import { Sparkles } from "lucide-react";
@@ -14,6 +13,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Info } from "lucide-react";
+import AboutSection from "@/components/AboutSection";
 
 export default function ClientHomePage() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -89,6 +90,8 @@ export default function ClientHomePage() {
           </h2>
           <LogList refreshKey={refreshKey} />
         </section>
+
+        <AboutSection />
       </main>
 
       <footer className="mt-16 py-8 text-center text-muted-foreground text-sm">

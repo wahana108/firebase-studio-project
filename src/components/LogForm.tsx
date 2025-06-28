@@ -2,6 +2,8 @@
 // src/components/LogForm.tsx
 "use client";
 
+
+
 import { useState, useEffect } from 'react';
 import { useForm, SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,7 +12,7 @@ import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, updateDoc, doc, query, where, getDocs, orderBy, Timestamp as FirestoreTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import type { LogEntry, LogFormProps } from '@/types';
+import type { LogEntry, LogFormProps, ImageItem } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,10 +21,14 @@ import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+const imageItemSchema = z.object({
+  url: z.string().url({ message: "Please enter a valid URL." }).or(z.literal('')).optional(),
+});
+
 const logFormSchema = z.object({
   title: z.string().min(1, 'Title is required').max(150),
   description: z.string().min(1, 'Description is required').max(5000),
-  imageLink: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+  imageUrls: z.array(imageItemSchema).optional(),
   youtubeLink: z.string()
     .url('Must be a valid YouTube URL')
     .refine(val => !val || val.includes('youtube.com') || val.includes('youtu.be'), {
@@ -30,9 +36,9 @@ const logFormSchema = z.object({
     })
     .or(z.literal(''))
     .optional(),
-  isPublic: z.boolean().default(false),
+  isPublic: z.boolean(),
   developerImageFile: z.custom<FileList | null>(val => val === null || val instanceof FileList).optional(),
-  relatedLogIds: z.array(z.string()).optional().default([]),
+  relatedLogIds: z.array(z.string()),
 });
 
 type LogFormValues = z.infer<typeof logFormSchema>;
@@ -44,7 +50,7 @@ interface SelectableLog {
   title: string;
 }
 
-export default function LogForm({ initialData, onSave }: LogFormProps) {
+export default function LogForm({ initialData, onSave, action }: LogFormProps) {
   const { currentUser } = useAuth();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,11 +73,11 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     defaultValues: {
       title: initialData?.title || '',
       description: initialData?.description || '',
-      imageLink: initialData?.imageLink || '',
+      imageUrls: initialData?.imageUrls?.length ? initialData.imageUrls : [{ url: '' }],
       youtubeLink: initialData?.youtubeLink || '',
       isPublic: initialData?.isPublic || false,
       developerImageFile: null,
-      relatedLogIds: initialData?.relatedLogIds || [],
+      relatedLogIds: initialData?.relatedLogIds ?? [],
     },
   });
 
@@ -81,7 +87,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     if (initialData) {
       setValue('title', initialData.title || '');
       setValue('description', initialData.description || '');
-      setValue('imageLink', initialData.imageLink || '');
+      setValue('imageUrls', initialData.imageUrls?.length ? initialData.imageUrls : [{ url: '' }]);
       setValue('youtubeLink', initialData.youtubeLink || '');
       setValue('isPublic', initialData.isPublic || false);
       setValue('relatedLogIds', initialData.relatedLogIds || []);
@@ -127,7 +133,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     setIsSubmitting(true);
     setError(null);
 
-    let finalImageLink = data.imageLink || null;
+    let finalImageUrls: ImageItem[] = data.imageUrls ? data.imageUrls.map(item => ({ url: item.url || '' })).filter(item => item.url) : [];
 
     if (isDeveloper && data.developerImageFile && data.developerImageFile.length > 0) {
       const file = data.developerImageFile[0];
@@ -135,7 +141,12 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       const imageRef = ref(storage, storagePath);
       try {
         await uploadBytes(imageRef, file);
-        finalImageLink = await getDownloadURL(imageRef);
+        const downloadURL = await getDownloadURL(imageRef);
+        if (finalImageUrls.length > 0) {
+          finalImageUrls[0] = { url: downloadURL };
+        } else {
+          finalImageUrls.push({ url: downloadURL });
+        }
       } catch (uploadError) {
         console.error('Error uploading image:', uploadError);
         setError('Failed to upload image. Please try again.');
@@ -147,7 +158,7 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
     const logDataToSave: Omit<LogEntry, 'id' | 'createdAt' | 'updatedAt' | 'commentCount' | 'relatedLogTitles'> = {
       title: data.title,
       description: data.description,
-      imageLink: finalImageLink,
+      imageUrls: finalImageUrls,
       youtubeLink: data.youtubeLink || null,
       isPublic: data.isPublic,
       ownerId: currentUser.uid,
@@ -229,16 +240,22 @@ export default function LogForm({ initialData, onSave }: LogFormProps) {
       </div>
 
       <div>
-        <Label htmlFor="imageLink" className="block text-sm font-medium mb-1">Image Link (Optional)</Label>
-        <Input
-          id="imageLink"
-          type="url"
-          {...register('imageLink')}
-          className="w-full"
-          placeholder="https://example.com/image.jpg"
-          disabled={isSubmitting}
+        <Label htmlFor="imageUrls.0.url" className="block text-sm font-medium mb-1">Image URL (Optional)</Label>
+        <Controller
+          name="imageUrls.0.url"
+          control={control}
+          render={({ field }) => (
+            <Input
+              id="imageUrls.0.url"
+              type="url"
+              {...field}
+              className="w-full"
+              placeholder="https://example.com/image.jpg"
+              disabled={isSubmitting}
+            />
+          )}
         />
-        {errors.imageLink && <p className="text-sm text-destructive mt-1">{errors.imageLink.message}</p>}
+        {errors.imageUrls?.[0]?.url && <p className="text-sm text-destructive mt-1">{errors.imageUrls?.[0]?.url?.message}</p>}
       </div>
 
       {isDeveloper && (

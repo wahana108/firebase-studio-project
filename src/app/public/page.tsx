@@ -9,6 +9,13 @@ import type { LogEntry } from '@/types';
 import LogList from '@/components/LogList';
 import { Input } from '@/components/ui/input';
 import { Search as SearchIcon } from 'lucide-react';
+import AboutSection from '@/components/AboutSection';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 async function fetchLogTitles(logIds: string[]): Promise<string[]> {
   const titles: string[] = [];
@@ -113,6 +120,19 @@ export default function PublicLogsPage() {
             className="pl-10 w-full"
           />
         </div>
+      </div>
+
+      <div className="mb-8 max-w-2xl mx-auto">
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="about-section">
+            <AccordionTrigger className="text-muted-foreground hover:no-underline">
+              About This Page & Comment Policy
+            </AccordionTrigger>
+            <AccordionContent>
+              <AboutSection />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
       
       <LogList 

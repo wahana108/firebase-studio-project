@@ -4,10 +4,11 @@ import type { LogEntry } from '@/types';
 import LogItem from './LogItem';
 
 interface LogListProps {
-  logs: LogEntry[];
+  logs?: LogEntry[];
   showControls?: boolean; 
   isListItem?: boolean; // New prop
   emptyStateMessage?: string;
+  refreshKey?: number; // Add refreshKey prop
 }
 
 export default function LogList({ 
