@@ -15,11 +15,6 @@ export function middleware(request: NextRequest) {
   console.log(`[Middleware] BASIC_AUTH_USER_MW (from env): ${BASIC_AUTH_USER ? 'SET' : 'NOT SET'}`);
   console.log(`[Middleware] BASIC_AUTH_PASS_MW (from env): ${BASIC_AUTH_PASS ? 'SET' : 'NOT SET'}`);
 
-  // Izinkan permintaan internal Next.js (RSC, aset statis, data, prefetch)
-  // DAN SEMUA PERMINTAAN LAINNYA KARENA WEBSITE INI SEKARANG PUBLIK
-  console.log("[Middleware] Bypassing authentication for public site.");
-  return NextResponse.next();
-
   if (
     request.nextUrl.pathname.startsWith('/_next') || // Aset Next.js
     request.headers.get('x-nextjs-data') || // Indikator lama untuk data request (digunakan oleh App Router)
@@ -31,57 +26,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Peringatan jika kredensial Basic Auth tidak di-set di environment variables
-  if (!BASIC_AUTH_USER || !BASIC_AUTH_PASS) {
-    console.error(
-      "[Middleware] CRITICAL: Basic Auth credentials (BASIC_AUTH_USER_MW or BASIC_AUTH_PASS_MW) are NOT SET or empty in environment variables. Authentication will fail or be bypassed if logic is flawed."
-    );
-    // Pertimbangkan untuk langsung mengembalikan 401 atau 500 di sini jika kredensial tidak ada,
-    // daripada membiarkan logika autentikasi berpotensi gagal secara diam-diam.
-    // Contoh: return new NextResponse("Configuration error: Auth credentials missing", { status: 500 });
-    // Untuk sekarang, kita biarkan lanjut agar bisa melihat log lainnya saat debugging.
-  }
-
-  // 1. Cek header kustom x-password (opsional, bisa dihapus jika tidak digunakan)
-  const xPassword = request.headers.get("x-password");
-  if (xPassword && xPassword === BASIC_AUTH_PASS) {
-    // Pastikan BASIC_AUTH_PASS ada dan cocok
-    console.log("[Middleware] Access granted via x-password header.");
-    return NextResponse.next();
-  }
-
-  // 2. Cek Basic Authentication
-  const authorizationHeader = request.headers.get("authorization");
-  if (authorizationHeader) {
-    const authType = authorizationHeader.split(" ")[0];
-    const authValue = authorizationHeader.split(" ")[1];
-
-    if (authType === "Basic" && authValue) {
-      try {
-        const [user, pass] = Buffer.from(authValue, "base64").toString().split(":");
-        if (user === BASIC_AUTH_USER && pass === BASIC_AUTH_PASS) {
-          console.log("[Middleware] Basic Auth successful for user:", user);
-          return NextResponse.next(); // Autentikasi berhasil
-        } else {
-          // Jangan log password yang salah dari pengguna, cukup username jika perlu
-          console.warn("[Middleware] Basic Auth failed: Credentials mismatch for user:", user);
-        }
-      } catch (e) {
-        console.error("[Middleware] Error parsing Basic Auth header:", e);
-        // Kesalahan parsing, lanjutkan untuk mengirim respons Unauthorized
-      }
-    } else {
-      console.log("[Middleware] Authorization header found, but not 'Basic' type or value is missing.");
-    }
-  } else {
-    console.log("[Middleware] No authorization header found. Proceeding to send 401.");
-  }
-
-  // Jika semua metode autentikasi gagal, kirim respons Unauthorized
-  console.log("[Middleware] All authentication checks failed or no credentials provided by client. Sending 401 Unauthorized.");
-  const response = new NextResponse("Unauthorized", { status: 401 });
-  response.headers.set('WWW-Authenticate', `Basic realm="${REALM}"`);
-  return response;
+  // IZINKAN AKSES PUBLIK: Website ini sekarang terbuka untuk umum secara keseluruhan.
+  // Diletakkan setelah pengecekan internal Next.js agar aset sistem tetap diproses cepat
+  console.log("[Middleware] Bypassing authentication for public site.");
+  return NextResponse.next();
 }
 
 export const config = {
