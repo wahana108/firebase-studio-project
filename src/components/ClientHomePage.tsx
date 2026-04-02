@@ -14,6 +14,7 @@ export default function ClientHomePage() {
 
   const handleLogCreated = useCallback(() => {
     setRefreshKey((prev) => prev + 1);
+    console.log("[ClientHomePage] Refresh triggered for LogList");
   }, []);
 
   const handleLogCreatedAndCollapse = useCallback(() => {
@@ -76,7 +77,7 @@ export default function ClientHomePage() {
           <h2 id="logs-list-heading" className="text-3xl font-semibold mb-8 text-center md:text-left text-foreground">
             Your Mind Map Logs
           </h2>
-          <LogList key={refreshKey} />
+          <LogList refreshKey={refreshKey} />
         </section>
       </main>
 

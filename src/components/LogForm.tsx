@@ -386,7 +386,7 @@ function LogFormComponent({
         relatedLogTitles: (data.relatedLogIds || []).map(
           (id) => allLogs.find((log) => log.id === id)?.title || `Log ${id.substring(0, 6)}...`
         ),
-        isPublic: data.isPublic || false, // Save isPublic status
+        isPublic: Boolean(data.isPublic), // Pastikan nilai selalu boolean untuk filter query
         updatedAt: new Date().toISOString(),
         ...(initialData?.id ? {} : { createdAt: new Date().toISOString() }),
         ...(initialData?.createdAt && initialData?.id ? { createdAt: initialData.createdAt } : {}),
