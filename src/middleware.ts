@@ -16,6 +16,10 @@ export function middleware(request: NextRequest) {
   console.log(`[Middleware] BASIC_AUTH_PASS_MW (from env): ${BASIC_AUTH_PASS ? 'SET' : 'NOT SET'}`);
 
   // Izinkan permintaan internal Next.js (RSC, aset statis, data, prefetch)
+  // DAN SEMUA PERMINTAAN LAINNYA KARENA WEBSITE INI SEKARANG PUBLIK
+  console.log("[Middleware] Bypassing authentication for public site.");
+  return NextResponse.next();
+
   if (
     request.nextUrl.pathname.startsWith('/_next') || // Aset Next.js
     request.headers.get('x-nextjs-data') || // Indikator lama untuk data request (digunakan oleh App Router)

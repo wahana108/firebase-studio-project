@@ -2,7 +2,7 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query as firestoreQuery, where } from "firebase/firestore"; // Ditambahkan query dan where
 import { db } from "@/lib/firebase";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ interface Log {
   title: string;
   description: string;
   imageUrls?: { url: string; isMain?: boolean; caption?: string }[];
+  isPublic?: boolean; // Pastikan tipe Log memiliki isPublic
 }
 
 export default function SearchPageClient() {
@@ -25,15 +26,20 @@ export default function SearchPageClient() {
     async function fetchSearchResults() {
       try {
         const logsCollection = collection(db, "logs");
-        const querySnapshot = await getDocs(logsCollection);
+        // Modifikasi query untuk hanya mengambil log publik
+        const q = firestoreQuery(logsCollection, where("isPublic", "==", true));
+        const querySnapshot = await getDocs(q);
+
         const logData = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         })) as Log[];
+
+        // Filter client-side berdasarkan query pencarian pada log publik yang sudah diambil
         const filtered = logData.filter(
           (log) =>
-            log.title?.toLowerCase().includes(query.toLowerCase()) ||
-            log.description?.toLowerCase().includes(query.toLowerCase())
+            (log.title?.toLowerCase().includes(query.toLowerCase()) ||
+            log.description?.toLowerCase().includes(query.toLowerCase()))
         );
         setResults(filtered);
       } catch (error) {
@@ -111,9 +117,10 @@ export default function SearchPageClient() {
                   <Button asChild variant="outline">
                     <Link href={`/logs/${result.id}`}>View Details</Link>
                   </Button>
-                  <Button asChild variant="outline">
+                  {/* Tombol Edit dihilangkan dari halaman publik */}
+                  {/* <Button asChild variant="outline">
                     <Link href={`/logs/${result.id}/edit`}>Edit</Link>
-                  </Button>
+                  </Button> */}
                 </div>
               </div>
             );
