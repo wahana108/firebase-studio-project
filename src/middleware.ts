@@ -26,9 +26,31 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // IZINKAN AKSES PUBLIK: Website ini sekarang terbuka untuk umum secara keseluruhan.
-  // Diletakkan setelah pengecekan internal Next.js agar aset sistem tetap diproses cepat
-  console.log("[Middleware] Bypassing authentication for public site.");
+  // Terapkan Basic Auth untuk mengembalikan fungsi Privat pada Phase-4
+  const authHeader = request.headers.get('authorization');
+
+  if (BASIC_AUTH_USER && BASIC_AUTH_PASS) {
+    if (authHeader) {
+      const authValue = authHeader.split(' ')[1];
+      const [user, pass] = Buffer.from(authValue, 'base64').toString().split(':');
+
+      if (user === BASIC_AUTH_USER && pass === BASIC_AUTH_PASS) {
+        console.log("[Middleware] Access granted.");
+        return NextResponse.next();
+      }
+    }
+
+    console.warn("[Middleware] Unauthorized access attempt.");
+    return new NextResponse("Unauthorized", {
+      status: 401,
+      headers: {
+        'WWW-Authenticate': `Basic realm="${REALM}"`,
+      },
+    });
+  }
+
+  // Jika env var tidak di-set, biarkan masuk tapi log error (untuk debugging di Vercel)
+  console.error("[Middleware] BASIC_AUTH_USER_MW or BASIC_AUTH_PASS_MW not set in Environment Variables.");
   return NextResponse.next();
 }
 
